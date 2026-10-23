@@ -278,5 +278,5 @@ An easy way to visualize this is the water pipe analogy:
 
 ## License
 
-viva-pulse is MIT-licensed. Pulse is distributed by Kitware, Inc. under the Apache License 2.0; see `../engine/LICENSE` and `../engine/NOTICE`.
+viva-pulse is licensed under the Apache License 2.0 (see [LICENSE](LICENSE)). Pulse is distributed by Kitware, Inc. under the Apache License 2.0; see `../engine/LICENSE` and `../engine/NOTICE`.
 
