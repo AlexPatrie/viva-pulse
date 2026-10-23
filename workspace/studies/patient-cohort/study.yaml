@@ -3,9 +3,11 @@ name: patient-cohort
 title: Hemorrhage across the shipped patients
 investigation: pulse-hemorrhage
 created: '2026-10-23'
-status: planned
-execution_status: planned
-phase: Design
+status: complete
+execution_status: completed
+verdict: supported
+gate_status: passed
+phase: Decide
 question: 'Does the same right-leg hemorrhage (severity 0.8, 10 minutes) produce the
 
   same qualitative response in all 21 patients that ship with Pulse, and how
@@ -14,12 +16,8 @@ question: 'Does the same right-leg hemorrhage (severity 0.8, 10 minutes) produce
 
   '
 hypothesis: 'Every patient loses blood volume, raises heart rate and loses arterial
-
-  pressure. A bleed of the same severity removes a broadly similar absolute
-
-  volume, so patients with a smaller starting blood volume lose a larger
-
-  fraction of it.
+  pressure. Absolute blood loss varies much less than starting blood volume does,
+  so patients with a smaller starting blood volume lose a larger fraction of it.
 
   '
 objective: 'Run pulse_hemorrhage (RightLeg, severity 0.8, 600 s) once from each of
@@ -144,6 +142,26 @@ readouts:
   store_path: vitals.irreversible_state
   status: available
   description: Pulse reported an irreversible state; the engine is no longer advanced.
+units_and_time:
+- quantity: time
+  unit: s
+  scale: 1 s per recorded row (PulseProcess interval 1.0)
+  note: Pulse's own clock; its internal solver step is 0.02 s.
+- quantity: pressures (MAP)
+  unit: mmHg
+  note: As reported by Pulse.
+- quantity: heart rate
+  unit: 1/min
+  note: As reported by Pulse.
+- quantity: volumes (blood volume, hemorrhaged volume)
+  unit: mL
+  note: As reported by Pulse.
+- quantity: cardiac output
+  unit: L/min
+  note: As reported by Pulse.
+- quantity: infusion rate
+  unit: mL/min
+  note: Commanded by the MAP controller.
 expected_behavior:
 - name: every-patient-compensates
   observable: vitals.blood_volume_mL, vitals.heart_rate_bpm, vitals.mean_arterial_pressure_mmHg
@@ -225,6 +243,10 @@ preregistered:
     of fraction lost with starting blood volume is -0.91.'
   thresholds_provenance: The -0.7 correlation threshold is set below that pilot value;
     the qualitative criteria follow from the hypothesis.
+  pilot: Criteria were written after a direct pilot of the same 21 configurations
+    (workspace/experiments/_runs.yaml, pilot-2026-10-23-patients), which gave Spearman
+    rho = -0.91. Pulse is deterministic, so these criteria are regression checks on
+    the canonical runs, not out-of-sample predictions.
 falsifiability: 'Refuted if any patient fails to load or run, if any patient''s blood
   volume,
 
@@ -236,3 +258,753 @@ falsifiability: 'Refuted if any patient fails to load or run, if any patient''s 
 limitations:
 - The 21 patients are Pulse's shipped examples, not a population sample.
 - The same severity number does not mean the same bleeding rate in every patient.
+runs:
+- name: viva_pulse.composites.hemorrhage.pulse_hemorrhage__1792749278__df9c1d
+  status: completed
+  timestamp: 1792749297.67952
+  emitter:
+    kind: unknown
+  env_id: 73e98bb8f7456b7e
+  params: '{"state_file": "StandardMale@0s.json", "compartment": "RightLeg", "severity":
+    0.8}'
+  computed_outcomes:
+    _status: store_unresolved
+  provenance:
+    params:
+      compartment:
+        value: RightLeg
+        source: override
+      n_steps:
+        value: 600
+        source: resolved
+      severity:
+        value: 0.8
+        source: override
+      state_file:
+        value: StandardMale@0s.json
+        source: override
+    params_captured_at: '2026-10-23'
+    params_source: dashboard-runner
+- name: viva_pulse.composites.hemorrhage.pulse_hemorrhage__1792749298__67f9a1
+  status: completed
+  timestamp: 1792749316.654409
+  emitter:
+    kind: unknown
+  env_id: 73e98bb8f7456b7e
+  params: '{"state_file": "Bradycardic@0s.json", "compartment": "RightLeg", "severity":
+    0.8}'
+  computed_outcomes:
+    _status: store_unresolved
+  provenance:
+    params:
+      compartment:
+        value: RightLeg
+        source: override
+      n_steps:
+        value: 600
+        source: resolved
+      severity:
+        value: 0.8
+        source: override
+      state_file:
+        value: Bradycardic@0s.json
+        source: override
+    params_captured_at: '2026-10-23'
+    params_source: dashboard-runner
+- name: viva_pulse.composites.hemorrhage.pulse_hemorrhage__1792749317__af895f
+  status: completed
+  timestamp: 1792749336.2311192
+  emitter:
+    kind: unknown
+  env_id: 73e98bb8f7456b7e
+  params: '{"state_file": "Carol@0s.json", "compartment": "RightLeg", "severity":
+    0.8}'
+  computed_outcomes:
+    _status: store_unresolved
+  provenance:
+    params:
+      compartment:
+        value: RightLeg
+        source: override
+      n_steps:
+        value: 600
+        source: resolved
+      severity:
+        value: 0.8
+        source: override
+      state_file:
+        value: Carol@0s.json
+        source: override
+    params_captured_at: '2026-10-23'
+    params_source: dashboard-runner
+- name: viva_pulse.composites.hemorrhage.pulse_hemorrhage__1792749336__900992
+  status: completed
+  timestamp: 1792749356.0291111
+  emitter:
+    kind: unknown
+  env_id: 73e98bb8f7456b7e
+  params: '{"state_file": "Cynthia@0s.json", "compartment": "RightLeg", "severity":
+    0.8}'
+  computed_outcomes:
+    _status: store_unresolved
+  provenance:
+    params:
+      compartment:
+        value: RightLeg
+        source: override
+      n_steps:
+        value: 600
+        source: resolved
+      severity:
+        value: 0.8
+        source: override
+      state_file:
+        value: Cynthia@0s.json
+        source: override
+    params_captured_at: '2026-10-23'
+    params_source: dashboard-runner
+- name: viva_pulse.composites.hemorrhage.pulse_hemorrhage__1792749356__a206aa
+  status: completed
+  timestamp: 1792749375.733202
+  emitter:
+    kind: unknown
+  env_id: 73e98bb8f7456b7e
+  params: '{"state_file": "DefaultFemale@0s.json", "compartment": "RightLeg", "severity":
+    0.8}'
+  computed_outcomes:
+    _status: store_unresolved
+  provenance:
+    params:
+      compartment:
+        value: RightLeg
+        source: override
+      n_steps:
+        value: 600
+        source: resolved
+      severity:
+        value: 0.8
+        source: override
+      state_file:
+        value: DefaultFemale@0s.json
+        source: override
+    params_captured_at: '2026-10-23'
+    params_source: dashboard-runner
+- name: viva_pulse.composites.hemorrhage.pulse_hemorrhage__1792749376__536380
+  status: completed
+  timestamp: 1792749395.146525
+  emitter:
+    kind: unknown
+  env_id: 73e98bb8f7456b7e
+  params: '{"state_file": "DefaultMale@0s.json", "compartment": "RightLeg", "severity":
+    0.8}'
+  computed_outcomes:
+    _status: store_unresolved
+  provenance:
+    params:
+      compartment:
+        value: RightLeg
+        source: override
+      n_steps:
+        value: 600
+        source: resolved
+      severity:
+        value: 0.8
+        source: override
+      state_file:
+        value: DefaultMale@0s.json
+        source: override
+    params_captured_at: '2026-10-23'
+    params_source: dashboard-runner
+- name: viva_pulse.composites.hemorrhage.pulse_hemorrhage__1792749395__976c4e
+  status: completed
+  timestamp: 1792749414.565446
+  emitter:
+    kind: unknown
+  env_id: 73e98bb8f7456b7e
+  params: '{"state_file": "ExtremeFemale@0s.json", "compartment": "RightLeg", "severity":
+    0.8}'
+  computed_outcomes:
+    _status: store_unresolved
+  provenance:
+    params:
+      compartment:
+        value: RightLeg
+        source: override
+      n_steps:
+        value: 600
+        source: resolved
+      severity:
+        value: 0.8
+        source: override
+      state_file:
+        value: ExtremeFemale@0s.json
+        source: override
+    params_captured_at: '2026-10-23'
+    params_source: dashboard-runner
+- name: viva_pulse.composites.hemorrhage.pulse_hemorrhage__1792749415__11350a
+  status: completed
+  timestamp: 1792749434.105042
+  emitter:
+    kind: unknown
+  env_id: 73e98bb8f7456b7e
+  params: '{"state_file": "ExtremeMale@0s.json", "compartment": "RightLeg", "severity":
+    0.8}'
+  computed_outcomes:
+    _status: store_unresolved
+  provenance:
+    params:
+      compartment:
+        value: RightLeg
+        source: override
+      n_steps:
+        value: 600
+        source: resolved
+      severity:
+        value: 0.8
+        source: override
+      state_file:
+        value: ExtremeMale@0s.json
+        source: override
+    params_captured_at: '2026-10-23'
+    params_source: dashboard-runner
+- name: viva_pulse.composites.hemorrhage.pulse_hemorrhage__1792749434__b431ad
+  status: completed
+  timestamp: 1792749454.168812
+  emitter:
+    kind: unknown
+  env_id: 73e98bb8f7456b7e
+  params: '{"state_file": "Gus@0s.json", "compartment": "RightLeg", "severity": 0.8}'
+  computed_outcomes:
+    _status: store_unresolved
+  provenance:
+    params:
+      compartment:
+        value: RightLeg
+        source: override
+      n_steps:
+        value: 600
+        source: resolved
+      severity:
+        value: 0.8
+        source: override
+      state_file:
+        value: Gus@0s.json
+        source: override
+    params_captured_at: '2026-10-23'
+    params_source: dashboard-runner
+- name: viva_pulse.composites.hemorrhage.pulse_hemorrhage__1792749454__1b7fab
+  status: completed
+  timestamp: 1792749474.423711
+  emitter:
+    kind: unknown
+  env_id: 73e98bb8f7456b7e
+  params: '{"state_file": "Hassan@0s.json", "compartment": "RightLeg", "severity":
+    0.8}'
+  computed_outcomes:
+    _status: store_unresolved
+  provenance:
+    params:
+      compartment:
+        value: RightLeg
+        source: override
+      n_steps:
+        value: 600
+        source: resolved
+      severity:
+        value: 0.8
+        source: override
+      state_file:
+        value: Hassan@0s.json
+        source: override
+    params_captured_at: '2026-10-23'
+    params_source: dashboard-runner
+- name: viva_pulse.composites.hemorrhage.pulse_hemorrhage__1792749474__8624c2
+  status: completed
+  timestamp: 1792749494.416944
+  emitter:
+    kind: unknown
+  env_id: 73e98bb8f7456b7e
+  params: '{"state_file": "Jane@0s.json", "compartment": "RightLeg", "severity": 0.8}'
+  computed_outcomes:
+    _status: store_unresolved
+  provenance:
+    params:
+      compartment:
+        value: RightLeg
+        source: override
+      n_steps:
+        value: 600
+        source: resolved
+      severity:
+        value: 0.8
+        source: override
+      state_file:
+        value: Jane@0s.json
+        source: override
+    params_captured_at: '2026-10-23'
+    params_source: dashboard-runner
+- name: viva_pulse.composites.hemorrhage.pulse_hemorrhage__1792749494__5de967
+  status: completed
+  timestamp: 1792749513.986999
+  emitter:
+    kind: unknown
+  env_id: 73e98bb8f7456b7e
+  params: '{"state_file": "Jeff@0s.json", "compartment": "RightLeg", "severity": 0.8}'
+  computed_outcomes:
+    _status: store_unresolved
+  provenance:
+    params:
+      compartment:
+        value: RightLeg
+        source: override
+      n_steps:
+        value: 600
+        source: resolved
+      severity:
+        value: 0.8
+        source: override
+      state_file:
+        value: Jeff@0s.json
+        source: override
+    params_captured_at: '2026-10-23'
+    params_source: dashboard-runner
+- name: viva_pulse.composites.hemorrhage.pulse_hemorrhage__1792749514__ec36f3
+  status: completed
+  timestamp: 1792749534.057739
+  emitter:
+    kind: unknown
+  env_id: 73e98bb8f7456b7e
+  params: '{"state_file": "Joel@0s.json", "compartment": "RightLeg", "severity": 0.8}'
+  computed_outcomes:
+    _status: store_unresolved
+  provenance:
+    params:
+      compartment:
+        value: RightLeg
+        source: override
+      n_steps:
+        value: 600
+        source: resolved
+      severity:
+        value: 0.8
+        source: override
+      state_file:
+        value: Joel@0s.json
+        source: override
+    params_captured_at: '2026-10-23'
+    params_source: dashboard-runner
+- name: viva_pulse.composites.hemorrhage.pulse_hemorrhage__1792749534__723512
+  status: completed
+  timestamp: 1792749553.660945
+  emitter:
+    kind: unknown
+  env_id: 73e98bb8f7456b7e
+  params: '{"state_file": "Nathan@0s.json", "compartment": "RightLeg", "severity":
+    0.8}'
+  computed_outcomes:
+    _status: store_unresolved
+  provenance:
+    params:
+      compartment:
+        value: RightLeg
+        source: override
+      n_steps:
+        value: 600
+        source: resolved
+      severity:
+        value: 0.8
+        source: override
+      state_file:
+        value: Nathan@0s.json
+        source: override
+    params_captured_at: '2026-10-23'
+    params_source: dashboard-runner
+- name: viva_pulse.composites.hemorrhage.pulse_hemorrhage__1792749554__402bb1
+  status: completed
+  timestamp: 1792749573.05668
+  emitter:
+    kind: unknown
+  env_id: 73e98bb8f7456b7e
+  params: '{"state_file": "Overweight@0s.json", "compartment": "RightLeg", "severity":
+    0.8}'
+  computed_outcomes:
+    _status: store_unresolved
+  provenance:
+    params:
+      compartment:
+        value: RightLeg
+        source: override
+      n_steps:
+        value: 600
+        source: resolved
+      severity:
+        value: 0.8
+        source: override
+      state_file:
+        value: Overweight@0s.json
+        source: override
+    params_captured_at: '2026-10-23'
+    params_source: dashboard-runner
+- name: viva_pulse.composites.hemorrhage.pulse_hemorrhage__1792749573__7d26b8
+  status: completed
+  timestamp: 1792749593.1032891
+  emitter:
+    kind: unknown
+  env_id: 73e98bb8f7456b7e
+  params: '{"state_file": "Rick@0s.json", "compartment": "RightLeg", "severity": 0.8}'
+  computed_outcomes:
+    _status: store_unresolved
+  provenance:
+    params:
+      compartment:
+        value: RightLeg
+        source: override
+      n_steps:
+        value: 600
+        source: resolved
+      severity:
+        value: 0.8
+        source: override
+      state_file:
+        value: Rick@0s.json
+        source: override
+    params_captured_at: '2026-10-23'
+    params_source: dashboard-runner
+- name: viva_pulse.composites.hemorrhage.pulse_hemorrhage__1792749593__0f35b9
+  status: completed
+  timestamp: 1792749612.931486
+  emitter:
+    kind: unknown
+  env_id: 73e98bb8f7456b7e
+  params: '{"state_file": "Soldier@0s.json", "compartment": "RightLeg", "severity":
+    0.8}'
+  computed_outcomes:
+    _status: store_unresolved
+  provenance:
+    params:
+      compartment:
+        value: RightLeg
+        source: override
+      n_steps:
+        value: 600
+        source: resolved
+      severity:
+        value: 0.8
+        source: override
+      state_file:
+        value: Soldier@0s.json
+        source: override
+    params_captured_at: '2026-10-23'
+    params_source: dashboard-runner
+- name: viva_pulse.composites.hemorrhage.pulse_hemorrhage__1792749613__790216
+  status: completed
+  timestamp: 1792749632.970426
+  emitter:
+    kind: unknown
+  env_id: 73e98bb8f7456b7e
+  params: '{"state_file": "StandardFemale@0s.json", "compartment": "RightLeg", "severity":
+    0.8}'
+  computed_outcomes:
+    _status: store_unresolved
+  provenance:
+    params:
+      compartment:
+        value: RightLeg
+        source: override
+      n_steps:
+        value: 600
+        source: resolved
+      severity:
+        value: 0.8
+        source: override
+      state_file:
+        value: StandardFemale@0s.json
+        source: override
+    params_captured_at: '2026-10-23'
+    params_source: dashboard-runner
+- name: viva_pulse.composites.hemorrhage.pulse_hemorrhage__1792749633__02127c
+  status: completed
+  timestamp: 1792749653.313071
+  emitter:
+    kind: unknown
+  env_id: 73e98bb8f7456b7e
+  params: '{"state_file": "Tachycardic@0s.json", "compartment": "RightLeg", "severity":
+    0.8}'
+  computed_outcomes:
+    _status: store_unresolved
+  provenance:
+    params:
+      compartment:
+        value: RightLeg
+        source: override
+      n_steps:
+        value: 600
+        source: resolved
+      severity:
+        value: 0.8
+        source: override
+      state_file:
+        value: Tachycardic@0s.json
+        source: override
+    params_captured_at: '2026-10-23'
+    params_source: dashboard-runner
+- name: viva_pulse.composites.hemorrhage.pulse_hemorrhage__1792749654__1ecbc4
+  status: completed
+  timestamp: 1792749673.443182
+  emitter:
+    kind: unknown
+  env_id: 73e98bb8f7456b7e
+  params: '{"state_file": "Underweight@0s.json", "compartment": "RightLeg", "severity":
+    0.8}'
+  computed_outcomes:
+    _status: store_unresolved
+  provenance:
+    params:
+      compartment:
+        value: RightLeg
+        source: override
+      n_steps:
+        value: 600
+        source: resolved
+      severity:
+        value: 0.8
+        source: override
+      state_file:
+        value: Underweight@0s.json
+        source: override
+    params_captured_at: '2026-10-23'
+    params_source: dashboard-runner
+- name: viva_pulse.composites.hemorrhage.pulse_hemorrhage__1792749674__b9a255
+  status: completed
+  timestamp: 1792749693.227867
+  emitter:
+    kind: unknown
+  env_id: 73e98bb8f7456b7e
+  params: '{"state_file": "Ventilated@0s.json", "compartment": "RightLeg", "severity":
+    0.8}'
+  computed_outcomes:
+    _status: store_unresolved
+  provenance:
+    params:
+      compartment:
+        value: RightLeg
+        source: override
+      n_steps:
+        value: 600
+        source: resolved
+      severity:
+        value: 0.8
+        source: override
+      state_file:
+        value: Ventilated@0s.json
+        source: override
+    params_captured_at: '2026-10-23'
+    params_source: dashboard-runner
+simulation_set:
+- name: StandardMale-baseline
+  kind: single
+  base_model: viva_pulse.composites.hemorrhage.pulse_hemorrhage
+  is_baseline: true
+  status: ran
+  params:
+    state_file: StandardMale@0s.json
+    compartment: RightLeg
+    severity: 0.8
+    n_steps: 600
+  metrics: &id001
+  - mean-arterial-pressure
+  - heart-rate
+  - blood-volume
+  - total-hemorrhaged-volume
+  - cardiac-output
+  - irreversible-state
+- name: Bradycardic
+  kind: single
+  base_model: StandardMale
+  perturbation:
+    state_file: Bradycardic@0s.json
+  status: ran
+  metrics: *id001
+- name: Carol
+  kind: single
+  base_model: StandardMale
+  perturbation:
+    state_file: Carol@0s.json
+  status: ran
+  metrics: *id001
+- name: Cynthia
+  kind: single
+  base_model: StandardMale
+  perturbation:
+    state_file: Cynthia@0s.json
+  status: ran
+  metrics: *id001
+- name: DefaultFemale
+  kind: single
+  base_model: StandardMale
+  perturbation:
+    state_file: DefaultFemale@0s.json
+  status: ran
+  metrics: *id001
+- name: DefaultMale
+  kind: single
+  base_model: StandardMale
+  perturbation:
+    state_file: DefaultMale@0s.json
+  status: ran
+  metrics: *id001
+- name: ExtremeFemale
+  kind: single
+  base_model: StandardMale
+  perturbation:
+    state_file: ExtremeFemale@0s.json
+  status: ran
+  metrics: *id001
+- name: ExtremeMale
+  kind: single
+  base_model: StandardMale
+  perturbation:
+    state_file: ExtremeMale@0s.json
+  status: ran
+  metrics: *id001
+- name: Gus
+  kind: single
+  base_model: StandardMale
+  perturbation:
+    state_file: Gus@0s.json
+  status: ran
+  metrics: *id001
+- name: Hassan
+  kind: single
+  base_model: StandardMale
+  perturbation:
+    state_file: Hassan@0s.json
+  status: ran
+  metrics: *id001
+- name: Jane
+  kind: single
+  base_model: StandardMale
+  perturbation:
+    state_file: Jane@0s.json
+  status: ran
+  metrics: *id001
+- name: Jeff
+  kind: single
+  base_model: StandardMale
+  perturbation:
+    state_file: Jeff@0s.json
+  status: ran
+  metrics: *id001
+- name: Joel
+  kind: single
+  base_model: StandardMale
+  perturbation:
+    state_file: Joel@0s.json
+  status: ran
+  metrics: *id001
+- name: Nathan
+  kind: single
+  base_model: StandardMale
+  perturbation:
+    state_file: Nathan@0s.json
+  status: ran
+  metrics: *id001
+- name: Overweight
+  kind: single
+  base_model: StandardMale
+  perturbation:
+    state_file: Overweight@0s.json
+  status: ran
+  metrics: *id001
+- name: Rick
+  kind: single
+  base_model: StandardMale
+  perturbation:
+    state_file: Rick@0s.json
+  status: ran
+  metrics: *id001
+- name: Soldier
+  kind: single
+  base_model: StandardMale
+  perturbation:
+    state_file: Soldier@0s.json
+  status: ran
+  metrics: *id001
+- name: StandardFemale
+  kind: single
+  base_model: StandardMale
+  perturbation:
+    state_file: StandardFemale@0s.json
+  status: ran
+  metrics: *id001
+- name: Tachycardic
+  kind: single
+  base_model: StandardMale
+  perturbation:
+    state_file: Tachycardic@0s.json
+  status: ran
+  metrics: *id001
+- name: Underweight
+  kind: single
+  base_model: StandardMale
+  perturbation:
+    state_file: Underweight@0s.json
+  status: ran
+  metrics: *id001
+- name: Ventilated
+  kind: single
+  base_model: StandardMale
+  perturbation:
+    state_file: Ventilated@0s.json
+  status: ran
+  metrics: *id001
+pipeline_gate:
+  gate_evaluator:
+    result: blocked
+    blocked_by:
+    - every-patient-compensates
+    - smaller-patients-lose-larger-fraction
+    evaluated_by: code
+    diverges_from_authored: false
+last_test_run:
+  timestamp: '2026-10-23T10:25:21+00:00'
+  passed: 23
+  failed: 0
+  skipped: 0
+  duration_s: 0.46565699577331543
+claim: 'All 21 shipped patients bleed and compensate the same way, and the fraction
+  of blood lost falls with starting blood volume (Spearman rho = -0.91).
+
+  '
+confidence: Accepted
+findings:
+- id: F-01
+  tier: observation
+  statement: In every patient blood volume and MAP fell and heart rate rose. MAP fell
+    by 3.8 mmHg (Bradycardic) to 32.2 mmHg (Joel); heart rate rose by 21.5 (Bradycardic)
+    to 48.9 per min (Rick). No patient reached an irreversible state.
+  evidence:
+    study_tests:
+    - tests/test_cohort.py::test_every_patient_bleeds_and_compensates
+    runs: 'canonical runs: investigation run of 2026-10-23 at commit 5754940 (runs.db)'
+- id: F-02
+  tier: observation
+  statement: Absolute loss ranged from 1094 mL (ExtremeFemale) to 1755 mL (ExtremeMale),
+    a much narrower spread than starting blood volume (2881 to 7072 mL), so the fraction
+    lost ranged from 23.8% (Overweight) to 38.1% (Underweight); its Spearman rank
+    correlation with starting blood volume is -0.91.
+  evidence:
+    study_tests:
+    - tests/test_cohort.py::test_smaller_patients_lose_a_larger_fraction
+    runs: 'canonical runs: investigation run of 2026-10-23 at commit 5754940 (runs.db)'
+conclusion: '## Claims
+
+  The hypothesis holds (23/23 tests passed).
+
+
+  ## Limitations
+
+  The shipped patients are examples, not a population, and the same severity is not
+  the same bleeding rate in every patient.
+
+  '

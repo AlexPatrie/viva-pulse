@@ -78,11 +78,11 @@ class HemorrhageSeverityResponse(Visualization):
         band = {"type": "rect", "xref": "x3 domain", "yref": "y3", "x0": 0, "x1": 1,
                 "y0": start_map - 2, "y1": start_map + 2, "fillcolor": AXIS, "opacity": 0.35,
                 "line": {"width": 0}, "layer": "below"}
+        caption = ("Right-leg hemorrhage, StandardMale, 10 min per run. Top: values at 10 min against "
+                   "severity; the gray band is the starting MAP ±2 mmHg. Bottom: MAP over time "
+                   "(dashed gray = no bleed).")
         figure = layout(
             "MAP holds for mild bleeds, then falls once compensation is outrun",
-            "Right-leg hemorrhage, StandardMale, 10 min per run. Top: values at 10 min against "
-            "severity; the gray band is the starting MAP ±2 mmHg. Bottom: MAP over time "
-            "(dashed gray = no bleed).",
             height=700, shapes=[band],
             legend={"orientation": "h", "y": -0.2, "font": {"size": 11}},
             xaxis=axis("Severity", domain=[0.0, 0.28], anchor="y"),
@@ -94,4 +94,4 @@ class HemorrhageSeverityResponse(Visualization):
             yaxis3=axis("MAP (mmHg)", domain=[0.6, 1.0], anchor="x3"),
             yaxis4=axis("MAP (mmHg)", domain=[0.0, 0.42], anchor="x4"),
         )
-        return render(self.stable_div_id(), traces, figure, 700)
+        return render(self.stable_div_id(), traces, figure, 700, caption)

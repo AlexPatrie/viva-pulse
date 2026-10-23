@@ -88,6 +88,12 @@ def test_study_entry_runs_and_emits_its_readouts(study, kind, name):
     assert sim.state["vitals"]["irreversible_state"] is False
 
 
+def _db(study):
+    db = STUDIES / study / "runs.db"
+    assert db.is_file() and db.stat().st_size > 0, f"no run record at {db}"
+    return db
+
+
 def _specs():
     return {p.parent.name: yaml.safe_load(p.read_text()) for p in sorted(STUDIES.glob("*/study.yaml"))}
 
@@ -104,8 +110,11 @@ def test_visualization_renders_from_the_recorded_runs(study, viz):
     cls = VISUALIZATIONS[viz["address"].removeprefix("local:")]
     core = allocate_core()
     core.register_link(cls.__name__, cls)
-    gathered = gather_emitter_outputs(STUDIES / study / "runs.db")
+    gathered = gather_emitter_outputs(_db(study))
     document = build_viz_composite(viz, gathered, {cls.__name__: cls})
+    for port, runs in document["inputs_store"].items():
+        if port in viz["config"]["inputs_map"]:
+            assert runs and all(isinstance(v, (int, float)) for run in runs for v in run), port
     sim = Composite({"state": document}, core=core)
     sim.run(1)
     html = sim.state["output_store"]
@@ -115,9 +124,9 @@ def test_visualization_renders_from_the_recorded_runs(study, viz):
 @pytest.mark.parametrize("study, viz", list(_declared("comparative_visualizations")))
 def test_comparative_visualization_resolves_every_run(study, viz):
     """Each run is found by its sim_name (the label) and records the observable."""
-    db = STUDIES / study / "runs.db"
+    db = _db(study)
     for entry in viz["runs"]:
-        with sqlite3.connect(db) as conn:
+        with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as conn:
             row = conn.execute("SELECT run_id FROM runs_meta WHERE sim_name = ? "
                                "ORDER BY started_at DESC LIMIT 1", (entry["sim_name"],)).fetchone()
         assert row, f"no run named {entry['sim_name']!r}"

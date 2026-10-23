@@ -151,7 +151,14 @@ class PulseProcess(Process):
     def _ensure_engine(self):
         if self._engine is not None:
             return self._engine
-        ensure_pulse_importable(self.config["install_dir"])
+        bin_dir = ensure_pulse_importable(self.config["install_dir"])
+        # Pulse segfaults on the first infusion of a compound it has no data for.
+        compounds = bin_dir / "substances" / "compounds"
+        if not (compounds / f"{self.config['iv_compound']}.json").is_file():
+            raise ValueError(
+                f"iv_compound {self.config['iv_compound']!r} is not a Pulse compound; available: "
+                f"{sorted(p.stem for p in compounds.glob('*.json'))}"
+            )
 
         from pulse.cdm import scalars
         from pulse.cdm.engine import SEDataRequest

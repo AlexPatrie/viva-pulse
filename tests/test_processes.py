@@ -94,6 +94,19 @@ def test_missing_state_file_is_reported():
         proc.initial_state()
 
 
+def test_unknown_iv_compound_is_rejected_at_load():
+    # Regression: Pulse segfaulted on the first infusion of a misspelled compound
+    # (e.g. 508 s into a resuscitation run); it must fail when the engine loads.
+    proc = make_pulse(iv_compound="Bloood")
+    with pytest.raises(ValueError, match="Bloood"):
+        proc.initial_state()
+
+
+def test_shipped_compounds_load():
+    for compound in ("Saline", "Blood"):
+        assert make_pulse(iv_compound=compound).initial_state()["blood_volume_mL"] > 0
+
+
 def test_explicit_bad_install_dir_raises_instead_of_falling_back(tmp_path):
     with pytest.raises(PulseNotFoundError, match="install_dir config"):
         resolve_install_dir(str(tmp_path))

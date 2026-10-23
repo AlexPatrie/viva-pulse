@@ -1,9 +1,9 @@
 """CohortBloodLoss: fraction of blood lost against starting blood volume, one dot per patient.
 
 Written with /viva-viz for the patient-cohort study. Patient names do not reach a
-Visualization through the workbench (only declared ports are wired, and its run
-labels sit under ``_run_labels``), so the per-patient MAP traces are a labelled
-comparative visualization instead.
+Visualization through the workbench (it builds per-run parameter strings under
+``_run_labels`` but wires only declared ports), so the per-patient MAP traces are a
+labelled comparative visualization instead.
 """
 
 import numpy as np
@@ -54,12 +54,12 @@ class CohortBloodLoss(Visualization):
                               "<br>lost %{customdata[0]:.0f} mL (%{y:.1f}%)"
                               "<br>MAP %{customdata[1]:.1f} → %{customdata[2]:.1f} mmHg<extra></extra>"),
         }]
+        caption = (f"The same right-leg hemorrhage (severity 0.8, 10 min) in each of the {len(start)} "
+                   "patients shipped with Pulse. Hover a dot for the loss and MAP change.")
         figure = layout(
             f"Smaller patients lose a larger share of their blood (Spearman ρ = {rho:.2f})",
-            f"The same right-leg hemorrhage (severity 0.8, 10 min) in each of the {len(start)} "
-            "patients shipped with Pulse. Hover a dot for the loss and MAP change.",
             height=480, showlegend=False,
             xaxis=axis("Starting blood volume (L)"),
             yaxis=axis("Blood lost in 10 min (% of starting volume)"),
         )
-        return render(self.stable_div_id(), traces, figure, 480)
+        return render(self.stable_div_id(), traces, figure, 480, caption)

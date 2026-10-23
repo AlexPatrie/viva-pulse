@@ -1,2 +1,23 @@
 # Recorded simulation runs (cross-phase, cross-model). Append-only.
-runs: []
+runs:
+- id: pilot-2026-10-23-severity
+  model: viva_pulse.composites.hemorrhage.pulse_hemorrhage
+  phase: post-initial-wrapping Task 1 (pilot for hemorrhage-severity-sweep)
+  parameters: {state_file: StandardMale@0s.json, compartment: RightLeg, severity: [0.2, 0.5, 0.8], duration_s: 600}
+  command: uv run --no-sync python workspace/experiments/pilot-2026-10-23/probe_studies.py severity 0.2 0.5 0.8
+  outputs: [workspace/experiments/pilot-2026-10-23/severity_600s.jsonl]
+  timestamp: '2026-10-23'
+  note: >-
+    Run directly (not through the workbench) before the studies' criteria were written.
+    Severity 0.2 and 0.8 are also canonical grid points, and Pulse is deterministic, so
+    those criteria were fixed knowing the outcome; 0.0, 0.4, 0.6 and 1.0 were unseen.
+- id: pilot-2026-10-23-patients
+  model: viva_pulse.composites.hemorrhage.pulse_hemorrhage
+  phase: post-initial-wrapping Task 1 (pilot for patient-cohort)
+  parameters: {state_file: all 21 bin/states/*@0s.json, compartment: RightLeg, severity: 0.8, duration_s: 600}
+  command: uv run --no-sync python workspace/experiments/pilot-2026-10-23/probe_studies.py patients 600
+  outputs: [workspace/experiments/pilot-2026-10-23/patients_600s.jsonl]
+  timestamp: '2026-10-23'
+  note: >-
+    The same configurations as the canonical cohort runs. It showed that all 21 states load
+    and gave the Spearman rho of -0.91 from which the cohort's -0.7 threshold was set.

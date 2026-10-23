@@ -7,6 +7,7 @@ A [process-bigraph](https://github.com/vivarium-collective/process-bigraph) wrap
 - **Available:**
   - processes: `PulseProcess`, `PulseCircuitProcess`, `MapFluidController`;
   - composites: `pulse_hemorrhage`, `pulse_resuscitation`, and the per-circuit composites `pulse_cardiovascular`, `pulse_respiratory`, `pulse_mechanical_ventilation`, `pulse_thermal`, `pulse_supplemental_oxygen`, and `pulse_whole_body_circuits`, which runs every module on one engine.
+  - workbench studies: the investigation `pulse-hemorrhage` (a severity sweep, a fluid-resuscitation comparison and all 21 shipped patients); see [Studies in the workbench](#studies-in-the-workbench).
 
   All are tested against the real engine.
 - **Not covered:** ECMO, the bag-valve mask, inhalers and the anesthesia machine. See [docs/plan/plan-circuit-composites.md](docs/plan/plan-circuit-composites.md).
@@ -206,6 +207,31 @@ for label, params in (("room air", {}),
 - **Same readings as the single-module composites.** At baseline, each module's readings equal those from its own composite; the tests check this.
 - **Supplemental oxygen comes from a wall supply.** Pulse also models a finite bottle that runs down, but every setpoint change resends the action, which would refill it, so the bottle isn't exposed.
 - **Device readings aren't exposed.** Some return NaN while the device is off, so the oxygen module reports oxygen delivery through the inspired fraction and the arterial blood gases.
+
+## Studies in the workbench
+
+This repo is a [vivarium-workbench](https://github.com/vivarium-collective/vivarium-workbench) workspace, so its composites appear in the workbench's catalog and run as studies. The workbench is installed in `.venv` (pinned in `pyproject.toml`) and must be served from there, because runs execute in the server's environment and only `.venv` can import PyPulse:
+
+```bash
+.venv/bin/vwb serve --detach          # prints the dashboard URL; state in .pbg/server/
+URL=$(jq -r .url .pbg/server/server-info)
+curl -s -X POST -H 'Content-Type: application/json' \
+  -d '{"investigation": "pulse-hemorrhage"}' $URL/api/investigation-run-unblocked    # every run, ~10 min
+curl -s -X POST -H 'Content-Type: application/json' \
+  -d '{"study": "patient-cohort"}' $URL/api/study-tests-run                           # a study's criteria
+```
+
+The investigation `pulse-hemorrhage` (`workspace/investigations/`) has three studies (`workspace/studies/`). Every run is recorded in the study's `runs.db`: its parameters, the git commit, the Python version, and the readouts at every simulated second. Each study's pass criteria are the pytest files in its `tests/` directory, fixed before the canonical runs. They were written after direct pilot runs, recorded in `workspace/experiments/_runs.yaml`; the pilots overlap some canonical configurations, and Pulse is deterministic, so those criteria are regression checks rather than predictions.
+
+| Study | What it varies | Result (StandardMale unless stated, right-leg bleed, 10 min) |
+|---|---|---|
+| `hemorrhage-severity-sweep` | Severity 0, 0.2, 0.4, 0.6, 0.8, 1.0 | Blood lost 0 / 386 / 823 / 1241 / 1577 / 1793 mL, heart rate 71 / 76 / 88 / 98 / 107 / 110 per min. MAP stays within 1.1 mmHg of its start (95.3) up to severity 0.4, then falls to 87.9 / 84.1 / 78.1 mmHg. |
+| `fluid-resuscitation` | Untreated; MAP-targeted infusion of saline or whole blood | Both treated arms end with 78 mL more blood volume and 2.2 mmHg more MAP than untreated. The controller only starts at 508 s and delivers 79.6 mL, so saline and whole blood can't be told apart within 10 minutes. |
+| `patient-cohort` | All 21 patient states shipped with Pulse | Every patient loses blood volume and MAP and raises heart rate. Absolute loss (1094 to 1755 mL) varies much less than starting blood volume (2.9 to 7.1 L), so smaller patients lose a larger fraction: 23.8% (Overweight) to 38.1% (Underweight), Spearman ρ = −0.91 against starting blood volume. |
+
+- **Sweeps are one variant per value.** The workbench runs `kind: sweep` only through its v2ecoli workflow, so each severity (and each patient) is its own variant.
+- **Figures.** `viva_pulse/visualizations/` adds the severity response and the cohort scatter. The labelled time courses (per arm, per patient) are the studies' `comparative_visualizations`, rendered at the end of an investigation run into each study's `viz/`.
+- **Known workbench limits** (drafted for upstream): `check-observables` and the report lint flag every `vitals.*` readout as not emittable, because they inspect the generator's document before the process fills `vitals/`; `tests/test_studies.py` checks the readouts against the running composite instead. The workbench's computed gate also reads only YAML behavior tests, so it shows these studies as blocked even though every pytest criterion passes.
 
 ## Tests
 
