@@ -3,6 +3,7 @@ file_format: mystnb
 kernelspec:
   name: python3
   display_name: Python 3
+  language: python
 ---
 
 # Tutorial 2: the cardiovascular circuit, region by region

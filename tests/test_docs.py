@@ -49,8 +49,8 @@ def test_hosted_build_needs_no_engine(tmp_path):
     env = {**os.environ, "READTHEDOCS": "True", "PULSE_INSTALL_DIR": str(tmp_path / "no-pulse")}
     _build(out, env)
     tutorial = (out / "tutorials/01-hemorrhage-and-resuscitation.html").read_text()
-    assert "can't build the Pulse engine" in tutorial
-    assert "can't build the Pulse engine" in (out / "index.html").read_text()
+    assert "show their code without its output" in tutorial
+    assert "show their code without its output" in (out / "index.html").read_text()
     assert "cell_output" not in tutorial  # published as code only
     results = (out / "results/pulse-hemorrhage.html").read_text()
     assert "cell_output" in results  # pages without the engine still execute

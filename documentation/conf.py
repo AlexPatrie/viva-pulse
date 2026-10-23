@@ -33,6 +33,7 @@ nb_execution_show_tb = True
 if os.environ.get("READTHEDOCS") == "True":
     nb_execution_excludepatterns = ["tutorials/*"]
     tags.add("hosted")  # noqa: F821 (Sphinx provides `tags` to conf.py)
+    suppress_warnings = ["mystnb.glue"]  # glued numbers exist only when the tutorial runs
 nb_render_markdown_format = "myst"  # Markdown outputs (the generated catalog) contain tables
 
 html_theme = "furo"
