@@ -7,6 +7,9 @@ kernelspec:
 
 # Tutorial 4: every circuit on one engine
 
+```{include} _hosted.md
+```
+
 **What you will do:** run every circuit module on one whole-body engine, put the patient on a
 non-rebreather oxygen mask, and see the change show up in three circuits at once.
 

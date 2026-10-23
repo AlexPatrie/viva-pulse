@@ -7,6 +7,9 @@ kernelspec:
 
 # Tutorial 2: the cardiovascular circuit, region by region
 
+```{include} _hosted.md
+```
+
 **What you will do:** double the systemic vascular resistance of the cardiovascular circuit and
 see how the whole circuit responds; then resolve a few heartbeats of aortic pressure.
 

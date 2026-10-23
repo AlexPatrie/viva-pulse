@@ -1,5 +1,7 @@
 # viva-pulse
 
+[![Documentation](https://readthedocs.org/projects/viva-pulse/badge/?version=latest)](https://viva-pulse.readthedocs.io/en/latest/)
+
 A [process-bigraph](https://github.com/vivarium-collective/process-bigraph) wrapper that drives the **real** [Kitware Pulse Physiology Engine](https://gitlab.kitware.com/physiology/engine) (whole-body adult model). Pulse runs as a time-stepped `Process`. Interventions are input ports, vital signs are output ports, and simulations are ordinary `process_bigraph.Composite` documents. Nothing is reimplemented or mocked: every number comes from Pulse's C++ engine through its own Python bindings.
 
 ## Status
@@ -235,7 +237,7 @@ The investigation `pulse-hemorrhage` (`workspace/investigations/`) has three stu
 
 ## Documentation
 
-The user documentation (Sphinx, in `documentation/`) covers installation, the processes and circuits, four tutorials, running studies in the workbench, the study results, and the API reference. Its tutorials run against the real engine while it builds, so every number on its pages is current. Build it locally and open it in your browser:
+The user documentation (Sphinx, in `documentation/`) covers installation, the processes and circuits, four tutorials, running studies in the workbench, the study results, and the API reference. Its tutorials run against the real engine while it builds, so every number on its pages is current. It is published at [viva-pulse.readthedocs.io](https://viva-pulse.readthedocs.io/en/latest/), where the tutorials show their code only (Read the Docs can't build Pulse). Build it locally to run them and open it in your browser:
 
 ```bash
 make docs        # installs the docs group if needed, does a fresh build (about a minute), opens it

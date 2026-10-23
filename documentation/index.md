@@ -2,8 +2,14 @@
 
 A [process-bigraph](https://github.com/vivarium-collective/process-bigraph) wrapper that
 drives the **real** [Kitware Pulse Physiology Engine](https://gitlab.kitware.com/physiology/engine).
+
+```{only} not hosted
 Every number on these pages comes from Pulse's C++ engine, run while the documentation was
 built.
+```
+
+```{include} tutorials/_hosted.md
+```
 
 ```{toctree}
 :maxdepth: 2

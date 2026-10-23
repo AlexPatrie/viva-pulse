@@ -3,7 +3,11 @@
 Build with `make docs` from the repo root. Tutorials are notebooks written in MyST
 markdown and executed against the real Pulse engine during the build, in this
 project's venv (the only environment that can import PyPulse); a cell that raises
-fails the build."""
+fails the build.
+
+On Read the Docs, which can't build Pulse, the tutorials are published as code only and
+the pages tagged ``hosted`` say so; every other page executes there as it does locally."""
+import os
 from importlib.metadata import version as _version
 
 project = "viva-pulse"
@@ -13,7 +17,7 @@ release = _version("viva-pulse")
 version = release
 
 extensions = ["myst_nb", "sphinx.ext.autodoc", "sphinx.ext.napoleon", "sphinx.ext.viewcode"]
-exclude_patterns = ["_build", "jupyter_execute", "Thumbs.db", ".DS_Store"]
+exclude_patterns = ["_build", "jupyter_execute", "Thumbs.db", ".DS_Store", "**/_*.md"]
 
 default_role = "literal"  # the docstrings write `name` for code
 autodoc_member_order = "bysource"
@@ -26,6 +30,9 @@ nb_execution_mode = "force"  # every build runs every tutorial against the curre
 nb_execution_raise_on_error = True
 nb_execution_timeout = 900
 nb_execution_show_tb = True
+if os.environ.get("READTHEDOCS") == "True":
+    nb_execution_excludepatterns = ["tutorials/*"]
+    tags.add("hosted")  # noqa: F821 (Sphinx provides `tags` to conf.py)
 nb_render_markdown_format = "myst"  # Markdown outputs (the generated catalog) contain tables
 
 html_theme = "furo"

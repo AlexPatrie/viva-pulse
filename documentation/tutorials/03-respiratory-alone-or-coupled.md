@@ -7,6 +7,9 @@ kernelspec:
 
 # Tutorial 3: the respiratory circuit, alone or coupled to the body
 
+```{include} _hosted.md
+```
+
 **What you will do:** stiffen both lungs and run the same respiratory module on two engines:
 the airway circuit alone, then the airway inside the whole body. The difference shows how much
 of the response comes from the circuit itself and how much from the rest of the body.

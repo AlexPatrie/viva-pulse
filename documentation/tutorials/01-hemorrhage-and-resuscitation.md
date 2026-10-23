@@ -7,6 +7,9 @@ kernelspec:
 
 # Tutorial 1: a hemorrhage, untreated and resuscitated
 
+```{include} _hosted.md
+```
+
 **What you will do:** bleed the StandardMale patient from the right leg for ten minutes, once
 untreated and once with a closed-loop controller that infuses saline whenever mean arterial
 pressure falls below 90 mmHg. Then compare the vital signs.
