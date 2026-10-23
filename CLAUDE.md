@@ -13,7 +13,7 @@ Session state (active work, next steps, user instructions such as "do not commit
 The venv is `.venv` (uv-created, CPython 3.12.12, the same Python `PyPulse` was compiled against).
 
 ```bash
-uv run --no-sync pytest -q                                              # full suite, ~100 s, real engine
+uv run --no-sync pytest -q                                              # full suite, ~160 s, real engine
 uv run --no-sync pytest -q tests/test_processes.py::test_zero_severity_does_not_bleed   # one test
 ```
 
@@ -52,14 +52,25 @@ The per-circuit composite plan (approved 2026-10-22) is [docs/plan/plan-circuit-
   - `respiratory.py` has two modules, both on both engines:
     - `respiratory`: 24 `SERespiratorySystem` scalars under `mechanics/`, plus gas compartments under `lungs/` and `pleura/`. Their `absolute_pressure_cmH2O` is absolute (ambient 1033.2). Setpoints: 10 `SERespiratoryMechanicsModifiers` multipliers (incremental, full group) and `intubated`.
     - `mechanical_ventilator`: 18 ventilator monitor values, which read 0 while disconnected. Setpoints: one pressure-control group. `connected=0` sends `SEMechanicalVentilatorConfiguration{connection: Off}`, because Pulse's Python drops a bare pressure-control action with Off (its `is_valid` requires the pressure settings, though C++ accepts it).
+  - `thermal.py`: the `thermal` module, whole_body only.
+    - 44 outputs:
+      - `energy/`: 4 `SEEnergySystem` scalars;
+      - `heat_loss/`: 8 `SEEnvironment` loss rates and coefficients;
+      - `environment/`: 7 conditions read back as `EnvironmentalConditions-<Property>` environment requests;
+      - `compartments/`: thermal-compartment Temperature, Heat, HeatTransferRateIn/Out.
+    - Only `InternalCore` and `InternalSkin` serve Heat, and `InternalGround` returns NaN for Temperature. `Active` (the applied-temperature node, while off) and `ExternalGround` read 0 K, so those temperatures are not exposed.
+    - Setpoint groups:
+      - `environment`: one `SEChangeEnvironmentalConditions`. It merges (Append); baselines are `environments/Standard.json`, which every shipped state uses. It includes the breathed-air temperature (`RespirationAmbientTemperature`, which drives respiration heat loss), which Pulse keeps separate from the ambient temperature. `CircuitModule.check_loaded` makes a state with another environment fail the load, because the first change would reset it.
+      - `thermal_application`: one `SEThermalApplication`. Pulse replaces it whole; zero power with the applied temperature off removes it. The applied temperature is blended with ambient by its area fraction.
+    - The StandardMale state is not thermally settled (skin 32.4 -> 30.0 °C over 30 min unperturbed), so tests compare against a parallel baseline run.
   - A request Pulse can't serve returns NaN, so the process fails the load instead of emitting it.
 - `viva_pulse/core.py`: `build_core()` registers the processes explicitly on an `allocate_core()` core, because discovery can miss editable installs. Tests and any `studies/*/sims/run.py` should use it.
 - `viva_pulse/composites/hemorrhage.py`: `@composite_generator`s `pulse_hemorrhage` and `pulse_resuscitation` (`fidelity="real-bridge"`, `core_extensions=[register_processes]`). Store layout: `interventions/` (setpoints), `vitals/` (engine outputs), and a `RAMEmitter` step at `emitter`. `PulseProcess` runs at `interval: 1.0`, so a run of `N` simulated seconds emits `N + 1` rows, the first at t=0.
-- `viva_pulse/composites/circuits.py`: `circuit_node()` / `circuit_emitter()` wiring helpers, `_setpoints()` (module baselines plus overrides, validated when the document is built), and the generators `pulse_cardiovascular`, `pulse_respiratory` and `pulse_mechanical_ventilation`. The two respiratory generators default to `ventilation_mechanics`. Store layout: `interventions/<module>/`, `circuits/<module>/`, `circuits/irreversible_state`, and `emitter`, which emits both subtrees.
+- `viva_pulse/composites/circuits.py`: `circuit_node()` / `circuit_emitter()` wiring helpers, `_setpoints()` (module baselines plus overrides, validated when the document is built), and the generators `pulse_cardiovascular`, `pulse_respiratory`, `pulse_mechanical_ventilation` and `pulse_thermal`. The two respiratory generators default to `ventilation_mechanics`. Store layout: `interventions/<module>/`, `circuits/<module>/`, `circuits/irreversible_state`, and `emitter`, which emits both subtrees.
 
 ## Tests
 
-Nothing is mocked. Tests that need the engine drive the real Pulse build. The validation, controller and registry tests don't load the engine at all. `tests/conftest.py::run_composite` builds a generator's document on a fresh `build_core()` and returns `(sim, emitter rows)`. Engine loads are cheap (well under a second); the suite's runtime comes from simulated time, mostly the two 600 s runs in `test_resuscitation_controller_engages_and_preserves_volume`. In `tests/test_circuits.py` the expected values come from one of three places:
+Nothing is mocked. Tests that need the engine drive the real Pulse build. The validation, controller and registry tests don't load the engine at all. `tests/conftest.py::run_composite` builds a generator's document on a fresh `build_core()` and returns `(sim, emitter rows)`. Engine loads are cheap (well under a second); the suite's runtime comes from simulated time, mostly the two 600 s runs in `test_resuscitation_controller_engages_and_preserves_volume` and the thermal tests (`tests/test_thermal.py`, about 60 s; Pulse runs about 35x real time and thermal effects need minutes of simulated time). In `tests/test_circuits.py` the expected values come from one of three places:
 - a separate engine loaded directly through Pulse's API, with requests spelled out independently in `ORACLE` (`_direct_engine`);
 - the actions active in Pulse's own serialized state (`_active_actions`);
 - measured physiological effect thresholds, e.g. systemic resistance x2 drops HR by more than 15 bpm.
