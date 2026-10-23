@@ -147,3 +147,23 @@ Probe scripts live in the scratchpad and run with `uv run --no-sync`. **Every He
 - Add: `viva_pulse/circuits/{__init__,base,vitals,hemorrhage,infusion,cardiovascular}.py`, `viva_pulse/composites/circuits.py`, `tests/test_circuits.py`, `docs/plan/plan-circuit-composites.md`
 - Untouched: `viva_pulse/composites/hemorrhage.py`, the existing tests
 - Engine (local branch): `src/python/pybind/PyPulse.cpp`, `src/python/pulse/engine/PulseEngine.py`, `src/cpp/engine/human_adult/hemodynamics/controller/Controller.cpp`
+
+## Phase 1 implementation notes (2026-10-22): deviations from the plan above
+
+- **No base class.** `PulseProcess` and `PulseCircuitProcess` share a module-level `_load_engine()` helper rather than a common base class. It's lighter, and `PulseProcess`'s ports and config are byte-for-byte unchanged.
+- **Only the `cardiovascular` module exists.**
+  - `vitals` and `infusion` modules were not created. `PulseProcess` keeps `VITALS`, and nothing else needs those modules yet.
+  - `HEMORRHAGE_COMPARTMENTS` moved to `circuits/cardiovascular.py`; `processes.py` re-exports it.
+  - The sub-stores are `hemodynamics`, `central`, `renal` and `peripheral`, following the diagram's branches; the plan's "tissue" became `peripheral`.
+- **Setpoints have their own input namespace.** All module setpoints sit under one input port, `setpoints/<module>/...`. The reason: process-bigraph projects `initial_state()` through input wires as well as output wires, so a module name shared between inputs and outputs leaked readings into `interventions/`. The registry reserves `setpoints` and `irreversible_state` as module names.
+- **Compartment flow properties are spelled `Inflow`/`Outflow`.** The earlier survey's `InFlow` returns NaN for every compartment.
+- **Action results are not checked.** `PulseEngine.process_action` discards the engine's success flag. Checking it needs the `PulseEngine.py` change from the deferred engine track, so it stays a known limitation until then.
+- **No `vitals` NaN gating across engines yet.** The only engine is `whole_body`, so `model_types` checks are in place but have nothing to gate.
+- **Two test substitutions.**
+  - The multiplier test uses **systemic** resistance x2 (HR 72 -> 43 at 60 s, SVR and CO), not "arterial x2 raises MAP". Arterial x2 has no measurable effect in Pulse, and the baroreflex holds MAP almost constant (95.3 -> 97.1).
+  - The hemorrhage test checks **mass balance** (blood-volume deficit equals volume lost) instead of "HR rises". HR rises only 72.0 -> 74.6 in 120 s at RightLeg 0.8.
+- **NaN guard timing.** NaN is checked at load (t = 0) **and after every update**. Readings are deltas, so a single NaN would poison its store for the rest of the run.
+- **The generator parameter is `model_type`, not `engine`.** It matches the process config key.
+- **Validation happens up front.** `PulseCircuitProcess` validates every changed setpoint group before sending any action. `pulse_cardiovascular` also runs the module's validators when it builds the document.
+- **The irreversible latch is unobservable from outside.** Pulse refuses to advance once irreversible (`Controller.cpp:790`), so the process's own latch can't be seen in the outputs; the test pins the output contract only. `PulseProcess` has the same property.
+- **Adversarial review (2026-10-23).** It found no blockers, and all ten findings were addressed. The new tests were each shown to fail on a deliberately broken copy of the code.

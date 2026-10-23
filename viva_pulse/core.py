@@ -7,11 +7,12 @@ workspace's own processes resolve regardless of how the package was installed
 
 from process_bigraph import allocate_core
 
-from .processes import MapFluidController, PulseProcess
+from .processes import MapFluidController, PulseCircuitProcess, PulseProcess
 
 
 def register_processes(core):
     core.register_link("PulseProcess", PulseProcess)
+    core.register_link("PulseCircuitProcess", PulseCircuitProcess)
     core.register_link("MapFluidController", MapFluidController)
     return core
 

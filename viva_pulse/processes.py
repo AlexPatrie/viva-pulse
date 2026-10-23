@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any
+import math
+from typing import Any, Callable
 
 from process_bigraph import Process, Step
 
+from .circuits import ENGINE_MODEL_TYPES, MODULES
+from .circuits.cardiovascular import HEMORRHAGE_COMPARTMENTS
 from .runtime import ensure_pulse_importable
 
 # Output port -> (Pulse physiology property, unit attribute on the scalar unit
@@ -23,11 +26,29 @@ VITALS: dict[str, tuple[str, str | None, str | None]] = {
     "total_hemorrhaged_volume_mL": ("TotalHemorrhagedVolume", "VolumeUnit", "mL"),
 }
 
-HEMORRHAGE_COMPARTMENTS = (
-    "Aorta", "Brain", "Muscle", "LargeIntestine", "LeftArm", "LeftKidney",
-    "LeftLeg", "Liver", "RightArm", "RightKidney", "RightLeg", "Skin",
-    "SmallIntestine", "Splanchnic", "Spleen", "VenaCava",
-)
+
+def _load_engine(install_dir: str, model_type: str, state_file: str, requests: list):
+    """Load a stabilized Pulse state into a new engine of ``model_type``.
+
+    ``model_type`` is a ``pulse.engine.PulseEngine.eModelType`` member name.
+    ``requests`` are ``SEDataRequest``s; ``pull_data()[1:]`` follows their order.
+    The engine is advanced by 0 s so ``pull_data()`` holds the loaded state's values.
+    """
+    bin_dir = ensure_pulse_importable(install_dir)
+
+    from pulse.cdm.engine import SEDataRequestManager
+    from pulse.engine.PulseEngine import PulseEngine, eModelType
+
+    state_path = bin_dir / "states" / state_file
+    if not state_path.is_file():
+        raise FileNotFoundError(f"Pulse state file not found: {state_path}")
+
+    engine = PulseEngine(getattr(eModelType, model_type), f"{bin_dir}/")
+    engine.log_to_console(False)
+    if not engine.serialize_from_file(str(state_path), SEDataRequestManager(requests)):
+        raise RuntimeError(f"Pulse failed to load state {state_path}")
+    engine.advance_time_s(0.0)
+    return engine
 
 
 class PulseProcess(Process):
@@ -101,29 +122,19 @@ class PulseProcess(Process):
     def _ensure_engine(self):
         if self._engine is not None:
             return self._engine
-        bin_dir = ensure_pulse_importable(self.config["install_dir"])
+        ensure_pulse_importable(self.config["install_dir"])
 
         from pulse.cdm import scalars
-        from pulse.cdm.engine import SEDataRequest, SEDataRequestManager
-        from pulse.engine.PulseEngine import PulseEngine, eModelType
+        from pulse.cdm.engine import SEDataRequest
 
         requests = []
         for prop, unit_cls, unit_name in VITALS.values():
             unit = getattr(getattr(scalars, unit_cls), unit_name) if unit_cls and unit_name else None
             requests.append(SEDataRequest.create_physiology_request(prop, unit=unit))
 
-        state_path = bin_dir / "states" / self.config["state_file"]
-        if not state_path.is_file():
-            raise FileNotFoundError(f"Pulse state file not found: {state_path}")
-
-        engine = PulseEngine(eModelType.HumanAdultWholeBody, f"{bin_dir}/")
-        engine.log_to_console(False)
-        if not engine.serialize_from_file(str(state_path), SEDataRequestManager(requests)):
-            raise RuntimeError(f"Pulse failed to load state {state_path}")
-        # Populate pull_data() with the loaded state's values without advancing.
-        engine.advance_time_s(0.0)
-        self._engine = engine
-        return engine
+        self._engine = _load_engine(self.config["install_dir"], "HumanAdultWholeBody",
+                                    self.config["state_file"], requests)
+        return self._engine
 
     def _read_vitals(self) -> dict[str, float]:
         values = self._ensure_engine().pull_data()
@@ -171,6 +182,188 @@ class PulseProcess(Process):
         current = self._read_vitals()
         self._previous = current
         return {name: current[name] - previous[name] for name in VITALS}
+
+
+# Engines PulseCircuitProcess can load today, mapped to eModelType member names.
+# HumanAdultHemodynamics segfaults on its first advance (no ECG model) and is not
+# selectable from Python; VentilationMechanics arrives with the respiratory
+# module. See docs/plan/plan-circuit-composites.md.
+SUPPORTED_MODEL_TYPES = {"whole_body": "HumanAdultWholeBody"}
+
+
+def _circuit_config_schema() -> dict[str, Any]:
+    schema: dict[str, Any] = {
+        "model_type": {"_type": "string", "_default": "whole_body"},
+        "modules": {"_type": "list[string]", "_default": []},
+        "state_file": {"_type": "string", "_default": "StandardMale@0s.json"},
+        "install_dir": {"_type": "string", "_default": ""},
+    }
+    for module in MODULES.values():
+        for key, spec in module.params.items():
+            if key in schema:
+                raise ValueError(f"circuit module {module.name!r} redefines config key {key!r}")
+            schema[key] = spec
+    return schema
+
+
+def _nest(leaves: list[tuple[tuple[str, ...], Any]]) -> dict[str, Any]:
+    tree: dict[str, Any] = {}
+    for path, value in leaves:
+        node = tree
+        for key in path[:-1]:
+            node = node.setdefault(key, {})
+        node[path[-1]] = value
+    return tree
+
+
+class PulseCircuitProcess(Process):
+    """Bridge to one real Pulse engine, exposing the selected circuit modules.
+
+    ``config.modules`` names entries of ``viva_pulse.circuits.MODULES``. Each
+    module contributes a port subtree named after it:
+
+    - outputs: the module's Pulse data requests as ``float`` ports, at the
+      module's nested paths (e.g. ``cardiovascular/central/aorta/pressure_mmHg``);
+    - inputs, under the single ``setpoints`` port: the module's setpoints as
+      ``overwrite[float]`` ports whose schema default is the baseline value,
+      forwarded to Pulse as actions only on change (e.g.
+      ``setpoints/cardiovascular/hemorrhage_severity``).
+
+    Inputs and outputs use disjoint top-level port names on purpose:
+    process-bigraph projects ``initial_state()`` through the input wires as
+    well as the output wires, so a shared name would copy readings into the
+    setpoint store.
+
+    Outputs follow ``PulseProcess``'s contract. ``initial_state()`` seeds each
+    store with the loaded state's reading and every update emits
+    ``current - previous``, so the store always equals Pulse's own value.
+    ``irreversible_state`` turns True once Pulse reports an irreversible state;
+    the engine is not advanced after that. Identical requests from different
+    modules share one Pulse request. A request that Pulse cannot serve (it
+    returns NaN) raises at load or at the update where it appears, naming the
+    request. All changed setpoint groups are validated before any action is sent.
+    """
+
+    config_schema = _circuit_config_schema()
+
+    def __init__(self, config=None, core=None):
+        super().__init__(config=config, core=core)
+        model_type = self.config["model_type"]
+        if model_type not in SUPPORTED_MODEL_TYPES:
+            known = "known" if model_type in ENGINE_MODEL_TYPES else "unknown"
+            raise ValueError(f"model_type {model_type!r} ({known}) is not supported; "
+                             f"supported: {sorted(SUPPORTED_MODEL_TYPES)}")
+        names = list(self.config["modules"])
+        if not names:
+            raise ValueError(f"modules must name at least one of {sorted(MODULES)}")
+        unknown = [n for n in names if n not in MODULES]
+        if unknown:
+            raise ValueError(f"unknown circuit modules {unknown}; available: {sorted(MODULES)}")
+        if len(set(names)) != len(names):
+            raise ValueError(f"modules listed more than once: {names}")
+        self._modules = [MODULES[n] for n in names]
+        for module in self._modules:
+            if model_type not in module.model_types:
+                raise ValueError(f"circuit module {module.name!r} does not support model_type "
+                                 f"{model_type!r} (supports {sorted(module.model_types)})")
+            if module.check_config:
+                module.check_config(self.config)
+
+        self._requests = []
+        index: dict[tuple, int] = {}
+        self._slots: list[tuple[tuple[str, ...], int]] = []
+        for module in self._modules:
+            for request in module.outputs:
+                key = request.key()
+                if key not in index:
+                    index[key] = len(self._requests)
+                    self._requests.append(request)
+                self._slots.append(((module.name, *request.path), index[key]))
+
+        self._applied = {(module.name, i): dict(binding.ports)
+                         for module in self._modules for i, binding in enumerate(module.bindings)}
+        self._engine = None
+        self._alive = True
+        self._previous: list[float] = []
+
+    def inputs(self):
+        return {"setpoints": {module.name: {port: {"_type": "overwrite[float]", "_default": default}
+                                            for binding in module.bindings
+                                            for port, default in binding.ports.items()}
+                              for module in self._modules if module.bindings}}
+
+    def outputs(self):
+        ports = _nest([(path, "float") for path, _ in self._slots])
+        ports["irreversible_state"] = "boolean"
+        return ports
+
+    def initial_state(self):
+        # Setpoint baselines come from the input schema ``_default``s.
+        readings = self._readings()
+        state = _nest([(path, readings[i]) for path, i in self._slots])
+        state["irreversible_state"] = False
+        return state
+
+    # -- engine lifecycle -------------------------------------------------
+
+    def _ensure_engine(self):
+        if self._engine is not None:
+            return self._engine
+        ensure_pulse_importable(self.config["install_dir"])
+        engine = _load_engine(self.config["install_dir"],
+                              SUPPORTED_MODEL_TYPES[self.config["model_type"]],
+                              self.config["state_file"],
+                              [request.to_pulse() for request in self._requests])
+        values = self._pull(engine)
+        self._engine = engine
+        self._previous = values
+        return engine
+
+    def _pull(self, engine) -> list[float]:
+        """Current readings in request order; NaN (a request Pulse cannot serve)
+        raises, because a NaN delta would poison its store for the rest of the run."""
+        values = [float(v) for v in engine.pull_data()[1:]]
+        unserved = [r for r, v in zip(self._requests, values) if math.isnan(v)]
+        if unserved:
+            raise ValueError("Pulse returned NaN for: " + ", ".join(
+                f"{r.category}:{r.compartment + '.' if r.compartment else ''}{r.property}"
+                for r in unserved))
+        return values
+
+    def _readings(self) -> list[float]:
+        self._ensure_engine()
+        return list(self._previous)
+
+    def _tree(self, value: Callable[[int], float]) -> dict[str, Any]:
+        return _nest([(path, value(i)) for path, i in self._slots])
+
+    def _apply_setpoints(self, engine, state):
+        # Validate every changed group before sending any action, so an invalid
+        # setpoint never leaves the engine with only part of an update applied.
+        changed = []
+        for module in self._modules:
+            for i, binding in enumerate(module.bindings):
+                values = {port: float(state["setpoints"][module.name][port]) for port in binding.ports}
+                if values != self._applied[(module.name, i)]:
+                    if binding.validate:
+                        binding.validate(values, self.config)
+                    changed.append(((module.name, i), binding, values))
+        for key, binding, values in changed:
+            engine.process_action(binding.build(values, self.config))
+            self._applied[key] = values
+
+    def update(self, state, interval):
+        engine = self._ensure_engine()
+        if not self._alive:
+            return {}
+        previous = self._readings()
+        self._apply_setpoints(engine, state)
+        if not engine.advance_time_s(float(interval)):
+            self._alive = False
+            return {"irreversible_state": True}
+        current = self._pull(engine)
+        self._previous = current
+        return self._tree(lambda i: current[i] - previous[i])
 
 
 class MapFluidController(Step):

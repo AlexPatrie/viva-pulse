@@ -4,8 +4,12 @@ A [process-bigraph](https://github.com/vivarium-collective/process-bigraph) wrap
 
 ## Status
 
-- **Available:** the `PulseProcess` and `MapFluidController` processes, and the `pulse_hemorrhage` and `pulse_resuscitation` composites. All are tested against the real engine.
-- **Planned:** one composite per Pulse circuit family, starting with cardiovascular, then respiratory and ventilator, thermal, and ECMO and other equipment. See [docs/plan/plan-circuit-composites.md](docs/plan/plan-circuit-composites.md).
+- **Available:**
+  - processes: `PulseProcess`, `PulseCircuitProcess`, `MapFluidController`;
+  - composites: `pulse_hemorrhage`, `pulse_resuscitation`, `pulse_cardiovascular` (the first per-circuit composite).
+
+  All are tested against the real engine.
+- **Planned:** per-circuit composites for respiratory and ventilator, thermal, and ECMO and other equipment. See [docs/plan/plan-circuit-composites.md](docs/plan/plan-circuit-composites.md).
 
 ## Requirements
 
@@ -65,8 +69,9 @@ rows = gather_emitter_results(sim)[("emitter",)]
 |---|---|
 | `pulse_hemorrhage` | Untreated hemorrhage at a chosen compartment and severity. Emits vital signs every second. |
 | `pulse_resuscitation` | The same hemorrhage plus a closed-loop IV fluid controller that targets mean arterial pressure. |
+| `pulse_cardiovascular` | The cardiovascular circuit, including its renal and tissue branches. Emits pressure, volume, inflow and outflow for 32 vascular regions, plus 20 hemodynamic values. Driven by Pulse's resistance and compliance multipliers and a hemorrhage. |
 
-Both use `fidelity="real-bridge"`. Patients load from Pulse's stabilized state files (`<install>/bin/states/*.json`, default `StandardMale@0s.json`).
+All three use `fidelity="real-bridge"`. Patients load from Pulse's stabilized state files (`<install>/bin/states/*.json`, default `StandardMale@0s.json`).
 
 ### Processes
 
@@ -74,11 +79,31 @@ Both use `fidelity="real-bridge"`. Patients load from Pulse's stabilized state f
   - Loads a stabilized Pulse state and advances the engine by `interval` seconds per update.
   - Inputs `hemorrhage_severity` and `iv_rate_mL_per_min` are setpoints, sent to Pulse as actions only when they change.
   - Outputs are nine vital signs plus an `irreversible_state` flag. Vitals are `float` ports carrying deltas, seeded with the loaded readings, so each store always equals Pulse's own value. The reason for this design is in `.build-progress.md`.
+- **`PulseCircuitProcess`**: one real Pulse engine exposing the circuit modules named in `config.modules` (see `viva_pulse/circuits/`).
+  - Each module's readings are a nested subtree of `float` delta ports. For example, `cardiovascular/central/aorta/pressure_mmHg` is wired to `circuits/cardiovascular/...`.
+  - Its setpoints sit under the `setpoints` input port and are wired to `interventions/<module>/...`. Each defaults to its baseline (multipliers 1.0, hemorrhage 0.0) and is sent to Pulse only when it changes.
+  - Identical requests from several modules share one Pulse request. A request Pulse cannot serve fails the load instead of emitting NaN.
 - **`MapFluidController`**: a proportional `Step` that maps mean arterial pressure to IV infusion rate.
 
 ## Pulse circuits
 
-Pulse models physiology as lumped-parameter circuits. Below is the cardiovascular circuit, the target of the first circuit composite:
+Pulse models physiology as lumped-parameter circuits. `pulse_cardiovascular` exposes the cardiovascular circuit below. Its `central`, `renal` and `peripheral` sub-stores follow the diagram's branches.
+
+```python
+from process_bigraph import Composite, gather_emitter_results
+
+from viva_pulse.composites import pulse_cardiovascular
+from viva_pulse.core import build_core
+
+core = build_core()
+sim = Composite({"state": pulse_cardiovascular(core, systemic_resistance_multiplier=2.0)}, core=core)
+sim.run(60)
+cv = gather_emitter_results(sim)[("emitter",)][-1]["circuits"]["cardiovascular"]
+cv["central"]["aorta"]["pressure_mmHg"]
+cv["hemodynamics"]["heart_rate_bpm"]   # about 43 bpm: the baroreflex answers doubled systemic resistance
+```
+
+Region readings are instantaneous within each heartbeat. Use `interval=0.02` (Pulse's timestep) to resolve waveforms; the default 1 s sampling aliases the cardiac cycle. Because process-bigraph accumulates time as floats, an interval that isn't exact in binary, such as 0.02, can lose the last update of a run: `run(2.0)` at 0.02 s emits rows up to t=1.98. Python can only reach regions (Pulse compartments), not individual circuit nodes or paths, because Pulse's bindings expose no node-level data requests.
 
 ![Pulse cardiovascular circuit](docs/images/circuit-cardio.png)
 
@@ -90,8 +115,26 @@ Pulse models physiology as lumped-parameter circuits. Below is the cardiovascula
 uv run --no-sync pytest -q
 ```
 
-The full suite takes about 65 s. Every engine-dependent test drives the real Pulse build; nothing is mocked.
+The full suite takes about 80 s. Every engine-dependent test drives the real Pulse build; nothing is mocked. Where a test needs an expected value, it loads its own engine directly through Pulse's Python API.
+
+## Regarding using the Python binding
+
+The existing Pulse python binding (`src/python/*`) is a light wrapper, not a 1:1 binding. There are two layers:
+  
+1. The compiled part (PyPulse, built with pybind11) is thin. It exposes one engine handle with about 15 methods (src/python/pybind/PulseEngines.cpp:18-44):
+   load or save state, initialize, process actions, advance time, pull data, and logs/events. Everything crossing that boundary is a JSON or protobuf string,
+   or a flat array of numbers. None of the C++ internals are reachable as objects: no circuits, nodes, paths, compartments, models or solver.
+2. The pulse Python package is a pure-Python copy of Pulse's data model, not of the engine. It has classes for actions, patients, configurations, data requests
+   and scalars with units. Your Python objects get serialized to the same protobuf format and handed to the C++ engine. That copy is broad but incomplete.
+   Anesthesia-machine and inhaler actions are missing, for example, as is the circuit-override action.
+
+So Python can do what a scenario file can: load a patient, apply actions, step time, and read named values (whole-body vitals, region pressures, volumes, flows
+and substances). It can't reach inside the engine, which is why the circuit composites work at the region level, not node by node. Making it closer to 1:1
+would mean writing new pybind bindings in ../engine. That's the "bind more of the C++" option we set aside.
+
+---
 
 ## License
 
 viva-pulse is MIT-licensed. Pulse is distributed by Kitware, Inc. under the Apache License 2.0; see `../engine/LICENSE` and `../engine/NOTICE`.
+
