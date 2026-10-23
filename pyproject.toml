@@ -37,6 +37,16 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest", "plotly", "bigraph-viz"]
 
+# The user documentation (`make docs`); its tutorials run the real engine, so it
+# builds in this project's venv: `uv pip install --group docs`.
+[dependency-groups]
+docs = [
+    "furo>=2025.12.19",
+    "ipykernel>=7.4.0",
+    "myst-nb>=1.4.0",
+    "sphinx>=8.2",  # 9.x needs Python 3.12; requires-python admits 3.11
+]
+
 # The workbench runs studies in this project's own venv (it is the only one
 # that can import PyPulse), so it is pinned to the main commit installed there.
 [tool.uv.sources]

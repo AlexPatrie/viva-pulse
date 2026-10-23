@@ -13,9 +13,11 @@ Session state (active work, next steps, user instructions such as "do not commit
 The venv is `.venv` (uv-created, CPython 3.12.12, the same Python `PyPulse` was compiled against).
 
 ```bash
-uv run --no-sync pytest -q                                              # full suite, ~225 s, real engine
+uv run --no-sync pytest -q                                              # full suite, ~5 min, real engine (incl. the docs build)
 uv run --no-sync pytest -q tests/test_processes.py::test_zero_severity_does_not_bleed   # one test
 ```
+
+User docs: `make docs` (fresh `sphinx-build -W` of `documentation/` in `.venv`, then opens the browser). The docs group is installed with `uv pip install --group docs` (the target does this). Tutorials and the results page are MyST-NB notebooks executed on every build against the real engine and the committed `runs.db` files; `tests/test_docs.py` runs the same strict build. Internal developer docs (plans, agendas, decisions) stay in `docs/`. Keep the user docs current with every user-visible change.
 
 Always pass `--no-sync`, and never run `uv sync`. The venv was assembled by hand, not from a lockfile: the Pulse build installed protobuf 7.35.0 to match its generated `_pb2` code, and `../engine/requirements.txt` was installed into it. With no `uv.lock` present, a sync would write a lock and resolve protobuf to a newer version (7.36.x at the time of writing). `uv sync` is also exact, so it would remove pytest (only in the `[dev]` extra) and the engine requirements.
 

@@ -6,6 +6,7 @@ from .respiratory import MECHANICAL_VENTILATOR, RESPIRATORY
 from .supplemental_oxygen import SUPPLEMENTAL_OXYGEN
 from .thermal import THERMAL
 
+#: Every circuit module, by name: the values ``PulseCircuitProcess`` accepts in ``config.modules``.
 MODULES: dict[str, CircuitModule] = {
     m.name: m for m in (CARDIOVASCULAR, RESPIRATORY, MECHANICAL_VENTILATOR, THERMAL, SUPPLEMENTAL_OXYGEN)
 }

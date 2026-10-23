@@ -11,9 +11,9 @@ from .circuits import ENGINE_MODEL_TYPES, MODULES
 from .circuits.cardiovascular import HEMORRHAGE_COMPARTMENTS
 from .runtime import ensure_pulse_importable
 
-# Output port -> (Pulse physiology property, unit attribute on the scalar unit
-# class named in the second slot, or None for unitless). Order is the
-# data-request order, which is the order of PulseEngine.pull_data()[1:].
+#: Output port -> (Pulse physiology property, scalar unit class, unit attribute on
+#: that class); the unit slots are None for unitless values. Order is the
+#: data-request order, which is the order of PulseEngine.pull_data()[1:].
 VITALS: dict[str, tuple[str, str | None, str | None]] = {
     "heart_rate_bpm": ("HeartRate", "FrequencyUnit", "Per_min"),
     "mean_arterial_pressure_mmHg": ("MeanArterialPressure", "PressureUnit", "mmHg"),

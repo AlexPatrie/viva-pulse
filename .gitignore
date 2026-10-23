@@ -20,6 +20,9 @@ output/
 investigations/*/runs.db
 investigations/*/viz/
 investigations/*/.run.lock
+# Sphinx build output (`make docs`)
+documentation/_build/
+documentation/jupyter_execute/
 # Workbench study runs: runs.db is the run record and is committed; the per-run
 # scripts, rendered caches and SQLite sidecars are regenerated.
 workspace/studies/*/sims/

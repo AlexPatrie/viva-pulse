@@ -233,6 +233,14 @@ The investigation `pulse-hemorrhage` (`workspace/investigations/`) has three stu
 - **Figures.** `viva_pulse/visualizations/` adds the severity response and the cohort scatter. The labelled time courses (per arm, per patient) are the studies' `comparative_visualizations`, rendered at the end of an investigation run into each study's `viz/`.
 - **Known workbench limits** (drafted for upstream): `check-observables` and the report lint flag every `vitals.*` readout as not emittable, because they inspect the generator's document before the process fills `vitals/`; `tests/test_studies.py` checks the readouts against the running composite instead. The workbench's computed gate also reads only YAML behavior tests, so it shows these studies as blocked even though every pytest criterion passes.
 
+## Documentation
+
+The user documentation (Sphinx, in `documentation/`) covers installation, the processes and circuits, four tutorials, running studies in the workbench, the study results, and the API reference. Its tutorials run against the real engine while it builds, so every number on its pages is current. Build it locally and open it in your browser:
+
+```bash
+make docs        # installs the docs group if needed, does a fresh build (about a minute), opens it
+```
+
 ## Tests
 
 ```bash
