@@ -125,8 +125,8 @@ Probe scripts live in the scratchpad and run with `uv run --no-sync`. **Every He
 |---|---|---|---|---|
 | 2 | `respiratory_mechanics`, `mechanical_ventilator` | ventilation_mechanics (+ whole_body) | `SERespiratoryMechanicsConfiguration`; ventilator PC/VC/CPAP | **First probe that VM advances cleanly** (subprocess). Reference `HowTo_VentilationMechanics.py`. Diagrams `Respiratory/RespiratoryCircuit.png`, `MechanicalVentilator/MechanicalVentilatorCircuit.png` |
 | 3 | `thermal` | whole_body | `SEChangeEnvironmentalConditions`, `SEThermalApplication` | Internal + External form one solve. Diagrams `Energy/internalThermal.png`, `Environment/EnvironmentCircuit.png` |
-| 4 | `ecmo`, `bag_valve_mask`, `supplemental_oxygen`, `anesthesia_machine`, `inhaler` | whole_body | equipment configs | Anesthesia machine and inhaler have no Python action classes (engine-side, scoped at that phase). At most one airway device is active (`CircuitManager.cpp:191-216`) |
-| 5 | `pulse_whole_body_circuits` | whole_body | union | All modules on one engine |
+| 4 | **Out of scope** (user, 2026-10-23): `ecmo`, `bag_valve_mask`, `anesthesia_machine`, `inhaler`. `supplemental_oxygen` moved to Phase 5 | whole_body | equipment configs | Anesthesia machine and inhaler have no Python action classes (engine-side, scoped at that phase). At most one airway device is active (`CircuitManager.cpp:191-216`) |
+| 5 | `supplemental_oxygen`, `pulse_whole_body_circuits` | whole_body | union | All modules on one engine. Completes this plan (user, 2026-10-23). See Phase 5 notes |
 
 ## Sequencing and hygiene
 
@@ -239,6 +239,31 @@ Probe scripts live in the scratchpad and run with `uv run --no-sync`. **Every He
   - docstring numbers and the sweat figure;
   - a shared `validate_switch`;
   - a `model_type` parameter on `pulse_thermal`.
+
+## Phase 5 implementation notes (2026-10-23): supplemental oxygen + every module on one engine
+
+- **Scope (user, 2026-10-23).** Phase 4 is out of scope except supplemental oxygen, which moved here. Phase 5 completes this plan. The user asked for it to be committed directly on `main`.
+- **`supplemental_oxygen` module** (whole_body only).
+  - Readings: FiO2, SpO2, PaO2, PaCO2.
+  - Setpoints: `oxygen_connected`, `oxygen_flow_L_per_min`. The device (nasal cannula, simple mask, non-rebreather) is config `oxygen_device`, following the `ventilator_mode`/`intubation_type` pattern.
+  - Disconnecting sends device `None`, which Pulse removes. The supply is a wall supply (`inf` volume): Pulse's finite bottle drains (1 L at 6 L/min runs out in 10 s) and would refill on every resend.
+  - Device gas compartments are not exposed: the nasal cannula's pressure is NaN while it is off, and the volumes are constant.
+- **The one-airway-device rule.** Pulse refuses a second airway device ("Can only change airway mode from the Free mode, Disable other equipment first"), and every later advance fails, which would latch `irreversible_state`.
+  - A one-update ventilator -> oxygen swap also fails, because Pulse processes the oxygen action before the ventilator's disconnect. An oxygen -> ventilator swap happens to work, but one rule covers both.
+  - `CircuitModule.airway_device` plus `PulseCircuitProcess._check_airway` reject two connected devices, and a device connecting in the update another disconnects. A staged handover (disconnect, then connect one update later, even 0.02 s) works.
+- **Generators.** `pulse_supplemental_oxygen` (respiratory plus oxygen) and `pulse_whole_body_circuits` (every whole-body module, 269 readings, flat parameters; names are unique across modules, which a test enforces).
+- **Measured** (StandardMale, 120 s, Δ against an unperturbed run):
+
+  | Intervention | Effect |
+  |---|---|
+  | nasal cannula 3.5 / simple mask 7.5 / non-rebreather 10 L/min | PaO2 240 / 393 / 563 mmHg (room air 91); FiO2 0.51 / 0.59 / 0.96 |
+  | non-rebreather (cross-circuit) | heart rate 71.9 -> 65.9, breathing rate 12.0 -> 14.2 |
+  | systemic resistance x2 (cross-circuit) | breathing rate 12.0 -> 10.6, tidal volume 512 -> 457 mL |
+  | ventilator PEEP 10 (CMV) | no measurable change in cardiac output at 120 s, so not used as a test |
+
+- **Combined-run oracle.** At baseline every module's readings in `pulse_whole_body_circuits` equal its single-module composite to 1e-9: Pulse's dynamics don't depend on which values are requested.
+- **Cost.** 120 simulated seconds take about 4 s; the suite takes about 225 s.
+- **No adversarial review.** Unlike phases 1-3, this phase shipped without one: the user called it off to finish the agenda (2026-10-23). Verification is the probe, 24 real-engine tests and 11 mutation checks.
 
 ## Follow-ups from the Pulse methodology review (2026-10-23)
 

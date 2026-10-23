@@ -50,6 +50,9 @@ read 0 while it is disconnected.
   ``SEMechanicalVentilatorPressureControl.is_valid()`` requires the pressure
   settings, although the C++ engine accepts a bare Off
   (``SEMechanicalVentilatorPressureControl::IsValid``).
+- ``connected`` is the module's ``airway_device``: Pulse allows one airway
+  device at a time, so it cannot be 1 while supplemental oxygen is connected
+  (see ``supplemental_oxygen``).
 """
 
 from __future__ import annotations
@@ -289,4 +292,5 @@ MECHANICAL_VENTILATOR = CircuitModule(
     ),
     params={"ventilator_mode": {"_type": "string", "_default": "AssistedControl"}},
     check_config=_check_ventilator_config,
+    airway_device="connected",
 )

@@ -6,10 +6,10 @@ A [process-bigraph](https://github.com/vivarium-collective/process-bigraph) wrap
 
 - **Available:**
   - processes: `PulseProcess`, `PulseCircuitProcess`, `MapFluidController`;
-  - composites: `pulse_hemorrhage`, `pulse_resuscitation`, and the per-circuit composites `pulse_cardiovascular`, `pulse_respiratory`, `pulse_mechanical_ventilation`, `pulse_thermal`.
+  - composites: `pulse_hemorrhage`, `pulse_resuscitation`, and the per-circuit composites `pulse_cardiovascular`, `pulse_respiratory`, `pulse_mechanical_ventilation`, `pulse_thermal`, `pulse_supplemental_oxygen`, and `pulse_whole_body_circuits`, which runs every module on one engine.
 
   All are tested against the real engine.
-- **Planned:** per-circuit composites for ECMO and other equipment, then one whole-body composite with every module. See [docs/plan/plan-circuit-composites.md](docs/plan/plan-circuit-composites.md).
+- **Not covered:** ECMO, the bag-valve mask, inhalers and the anesthesia machine. See [docs/plan/plan-circuit-composites.md](docs/plan/plan-circuit-composites.md).
 
 ## Requirements
 
@@ -73,6 +73,8 @@ rows = gather_emitter_results(sim)[("emitter",)]
 | `pulse_respiratory` | The respiratory (airway) circuit, either alone in Pulse's ventilation-mechanics engine (default) or coupled in the whole-body engine. Emits 24 breathing-mechanics values plus pressure, volume, inflow and outflow for 8 lung and pleural regions. Driven by Pulse's 10 respiratory resistance and compliance multipliers and intubation. |
 | `pulse_mechanical_ventilation` | The same, with a pressure-control mechanical ventilator connected, plus the ventilator's 18 monitor values. Defaults follow Kitware's HowTo: intubated, AC mode, 19/5 cmH2O, 12 breaths/min. Settings, including `connected`, can change mid-run. |
 | `pulse_thermal` | The temperature circuit: core and skin joined to clothing, enclosure and ambient air. Emits core and skin temperature, sweat rate, metabolic rate, 8 heat-loss values, the environmental conditions as Pulse applies them, and temperature (7 regions) and heat flow (8 regions) for the thermal regions. Driven by the environment (air, radiant and breathed-air temperature, humidity, air speed, clothing) and by active heating, active cooling or an applied skin temperature. |
+| `pulse_supplemental_oxygen` | Supplemental oxygen through a nasal cannula, simple mask or non-rebreather mask, from a wall supply, combined with the respiratory circuit. Emits breathing mechanics, lung regions, inspired oxygen fraction and arterial blood gases. Oxygen can be switched on and off, and its flow changed, mid-run. |
+| `pulse_whole_body_circuits` | Every module on one whole-body engine: cardiovascular, respiratory, mechanical ventilator, thermal and supplemental oxygen, 269 readings per row. Takes every module's parameters; the ventilator and oxygen start disconnected. Shows effects that cross circuits, such as oxygen slowing the heart. |
 
 All use `fidelity="real-bridge"`.
 
@@ -92,7 +94,8 @@ All use `fidelity="real-bridge"`.
   - Each module's readings are a nested subtree of `float` delta ports. For example, `cardiovascular/central/aorta/pressure_mmHg` is wired to `circuits/cardiovascular/...`.
   - Its setpoints sit under the `setpoints` input port and are wired to `interventions/<module>/...`. Each defaults to its baseline (multipliers 1.0, hemorrhage 0.0) and is sent to Pulse only when it changes.
   - Identical requests from several modules share one Pulse request. A request Pulse cannot serve fails the load, or the update where it appears, instead of emitting NaN.
-  - `model_type` selects the engine: `whole_body`, or `ventilation_mechanics`, which has the airway only (no blood or chemoreflex). Each module declares which engines it supports; `thermal` runs on `whole_body` only.
+  - `model_type` selects the engine: `whole_body`, or `ventilation_mechanics`, which has the airway only (no blood or chemoreflex). Each module declares which engines it supports; `thermal` and `supplemental_oxygen` run on `whole_body` only.
+  - Pulse allows one airway device at a time. A second one connecting makes every engine step fail, so the process raises instead: when the ventilator and oxygen are both connected, or when one connects in the same update the other disconnects. To switch devices, disconnect one update before connecting the other.
 - **`MapFluidController`**: a proportional `Step` that maps mean arterial pressure to IV infusion rate.
 
 ## Pulse circuits
@@ -175,15 +178,47 @@ for label, params in (("standard", {}), ("cold", cold)):
 
 *Pulse environment circuit, the external half of the temperature circuit. Copyright Kitware, Inc. and Contributors, Apache License 2.0, from `engine/docs/Images/Environment/EnvironmentCircuit.png`.*
 
+### Every circuit on one engine
+
+`pulse_whole_body_circuits` puts every module on one whole-body engine, so an intervention in one circuit shows up in the others:
+
+```python
+from process_bigraph import Composite, gather_emitter_results
+
+from viva_pulse.composites import pulse_whole_body_circuits
+from viva_pulse.core import build_core
+
+for label, params in (("room air", {}),
+                      ("non-rebreather", dict(oxygen_connected=1.0, oxygen_device="NonRebreatherMask",
+                                              oxygen_flow_L_per_min=10.0))):
+    core = build_core()
+    sim = Composite({"state": pulse_whole_body_circuits(core, interval=30.0, **params)}, core=core)
+    sim.run(120)
+    circuits = gather_emitter_results(sim)[("emitter",)][-1]["circuits"]
+    print(label,
+          round(circuits["supplemental_oxygen"]["oxygenation"]["arterial_oxygen_pressure_mmHg"]),
+          round(circuits["cardiovascular"]["hemodynamics"]["heart_rate_bpm"], 1),
+          round(circuits["respiratory"]["mechanics"]["respiration_rate_bpm"], 1))
+# room air 91 71.9 12.0
+# non-rebreather 563 65.9 14.2   <- more oxygen in the blood, a slower heart, faster breathing
+```
+
+- **Same readings as the single-module composites.** At baseline, each module's readings equal those from its own composite; the tests check this.
+- **Supplemental oxygen comes from a wall supply.** Pulse also models a finite bottle that runs down, but every setpoint change resends the action, which would refill it, so the bottle isn't exposed.
+- **Device readings aren't exposed.** Some return NaN while the device is off, so the oxygen module reports oxygen delivery through the inspired fraction and the arterial blood gases.
+
 ## Tests
 
 ```bash
 uv run --no-sync pytest -q
 ```
 
-The full suite takes about 160 s, most of it simulated time in the thermal and resuscitation tests. Every engine-dependent test drives the real Pulse build; nothing is mocked. Where a test needs an expected value, it loads its own engine directly through Pulse's Python API.
+The full suite takes about 225 s, most of it simulated time in the thermal, whole-body and resuscitation tests. Every engine-dependent test drives the real Pulse build; nothing is mocked. Where a test needs an expected value, it loads its own engine directly through Pulse's Python API.
 
-## Regarding using the Python binding
+---
+## Regarding...
+
+### ...Using the Python binding
 
 The existing Pulse python binding (`src/python/*`) is a light wrapper, not a 1:1 binding. There are two layers:
   
@@ -197,6 +232,13 @@ The existing Pulse python binding (`src/python/*`) is a light wrapper, not a 1:1
 So Python can do what a scenario file can: load a patient, apply actions, step time, and read named values (whole-body vitals, region pressures, volumes, flows
 and substances). It can't reach inside the engine, which is why the circuit composites work at the region level, not node by node. Making it closer to 1:1
 would mean writing new pybind bindings in ../engine. That's the "bind more of the C++" option we set aside.
+
+## ...Electrical circuits
+
+An easy way to visualize this is the water pipe analogy:
+- **Voltage** is the water pressure pushing through the pipe.
+- **Current** is the actual volume of water flowing per second.
+- **A Resistor** is a narrow restriction or squeeze in the pipe.
 
 ---
 

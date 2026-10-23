@@ -100,7 +100,9 @@ class CircuitModule:
     ``check_config`` validates them, raising ``ValueError``. ``check_loaded``
     receives the module's readings (nested like its outputs) once the engine is
     loaded, and raises ``ValueError`` if the loaded state contradicts the
-    module's setpoint baselines.
+    module's setpoint baselines. ``airway_device`` names the module's 0/1
+    setpoint that is 1 while its equipment occupies Pulse's airway: Pulse
+    allows one airway device at a time and stalls when a second one connects.
     """
 
     name: str
@@ -110,6 +112,7 @@ class CircuitModule:
     params: dict[str, dict[str, Any]] = field(default_factory=dict)
     check_config: Callable[[dict[str, Any]], None] | None = None
     check_loaded: Callable[[dict[str, Any]], None] | None = None
+    airway_device: str | None = None
 
     def __post_init__(self):
         if self.name in RESERVED_NAMES:
@@ -127,3 +130,5 @@ class CircuitModule:
         ports = [p for b in self.bindings for p in b.ports]
         if len(set(ports)) != len(ports):
             raise ValueError(f"{self.name}: duplicate setpoint ports")
+        if self.airway_device is not None and self.airway_device not in ports:
+            raise ValueError(f"{self.name}: airway_device {self.airway_device!r} is not a setpoint port")

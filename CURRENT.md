@@ -13,7 +13,9 @@ implement and complete" [docs/plan/plan-circuit-composites.md](docs/plan/plan-ci
 - Commits: the user approved the full release flow per phase (branch, PR,
   merge, tag, GitHub Release) and granted merge permission "when ready and
   safe" (2026-10-23). Anything outside that flow still needs asking. Never
-  push to `main` directly.
+  push to `main` directly, **except Phase 5**: the user said to "commit and do all
+  the full phase 5 work directly on main" (2026-10-23). The tag and GitHub Release
+  still follow.
 - Ignore the concurrent gnn session (user, 2026-10-23). The untracked
   `docs/guide/` in this repo is not this session's: leave it out of commits.
 - Keep README.md current with every user-visible change.
@@ -29,7 +31,7 @@ implement and complete" [docs/plan/plan-circuit-composites.md](docs/plan/plan-ci
   optional follow-up.
 - Upstream issues are drafted, never filed by Claude, in `upstream-issues/`
   at the repo root, kept out of git via `.git/info/exclude`.
-- The CI plan is implemented after Phase 5, in its own PR, with both open
+- The CI plan is implemented after Phase 5, in its own PR, **but not until the user asks** (2026-10-23), with both open
   choices taken: tighten the pin to `protobuf>=7.35,<7.36`, and replace
   `workspace-ci.yml` with the Pulse-building workflow.
 
@@ -42,9 +44,8 @@ implement and complete" [docs/plan/plan-circuit-composites.md](docs/plan/plan-ci
   - The merged `main` was re-verified locally before tagging: 61 passed,
     1 skipped; workspace lint OK.
 - **PR #2 merged as `8d7ed88`:** [docs/plan/plan-ci-pulse-build.md](docs/plan/plan-ci-pulse-build.md),
-  the scoped plan for building Pulse in CI. It's for later, and has two
-  decisions open for the user: tightening the protobuf pin, and deleting
-  `workspace-ci.yml`.
+  the scoped plan for building Pulse in CI. Both of its decisions are taken
+  (see Decisions above); it's implemented after Phase 5.
 - **v0.2.1 released (`55e9762`, PR #3):** `requires-python` is now `>=3.11`.
   The v0.2.0 image build failed because `bigraph-viz>=2.0.3`, added by the
   scaffold, needs Python >= 3.11, so `uv sync`/`uv lock` could not resolve.
@@ -66,7 +67,28 @@ implement and complete" [docs/plan/plan-circuit-composites.md](docs/plan/plan-ci
     - v0.3.0: succeeded (run 39903606704). Check later builds with
       `gh run list --workflow build-and-push.yml`.
 
-### Phase 3 (2026-10-23): thermal, branch `feat/circuit-thermal`, v0.4.0, in the release flow
+### Phase 5 in progress (2026-10-23): supplemental oxygen + every module, v0.5.0, on `main`
+
+- **Built, uncommitted on `main`.**
+  - `circuits/supplemental_oxygen.py`.
+  - `CircuitModule.airway_device`; the ventilator declares `connected`.
+  - `PulseCircuitProcess._check_airway`.
+  - Generators `pulse_supplemental_oxygen` and `pulse_whole_body_circuits` (`WHOLE_BODY_MODULES`).
+  - `tests/test_whole_body.py` (24 tests).
+  - Version 0.5.0.
+- **Verified.**
+  - Probe P9 (`.build-progress.md`).
+  - Suite: 148 passed, 1 skipped (224 s).
+  - Lint OK.
+  - Mutants P1-P11 all caught: device, flow, finite tank, disconnect, airway check, swap rule, ventilator undeclared, build-time check, a module dropped, PaO2 unit, slot mapping.
+- **Docs updated.** README (verified whole-body example), CLAUDE.md, plan Phase 5 notes, `.build-progress.md`. The user's own README edits ("Regarding..." restructure, electrical-circuit analogy) ride along.
+- **Adversarial review skipped** at the user's request ("let's just get this agenda finished", 2026-10-23); the review subagent was stopped.
+- **Next.**
+  3. Commit on `main` and push.
+  4. Tag `v0.5.0`, Release, and check the image build.
+  5. Tick the agenda: Phase 5 completes it.
+
+### Phase 3 released (2026-10-23): v0.4.0 (thermal)
 
 - **Built.**
   - `circuits/thermal.py`: the `thermal` module, whole_body only, 44 outputs.
@@ -85,7 +107,12 @@ implement and complete" [docs/plan/plan-circuit-composites.md](docs/plan/plan-ci
   - Lint OK.
   - Mutants M1-M9 plus the reviewer's R1-R9: all caught.
 - **Adversarial review done.** Nine findings, all fixed; the plan's Phase 3 notes list them.
-- **Next.** Commit (with this `CURRENT.md` and the plan's Hemodynamics edit), PR, merge, tag `v0.4.0`, Release, and check the image build.
+- **Released.**
+  - Commit `bdc8e3e`, PR #5, merged as `4ae29e4`; the branch is deleted.
+  - The merged `main` was re-verified locally: 124 passed, 1 skipped; lint OK.
+  - Annotated tag `v0.4.0` and a GitHub Release.
+  - Image build `39917947030` succeeded.
+  - PR CI: every gate passes except the tests (51 failed plus 4 errors, all `PulseNotFoundError`; 69 passed).
 
 ### Phase 2 released (2026-10-23): v0.3.0
 
@@ -172,26 +199,29 @@ implement and complete" [docs/plan/plan-circuit-composites.md](docs/plan/plan-ci
 
 ### Next
 
-1. **Phase 3 thermal**: in progress (see above). The original plan's steps,
-   kept for reference:
-   - First, a scratchpad probe (P8):
-     - which `SEEnergySystem` scalars return non-NaN after advancing;
-     - which thermal compartments, including their spelling (`Inflow`/`Outflow`
-       caution);
-     - whether `SEChangeEnvironmentalConditions` and `SEThermalApplication` move
-       core and skin temperature.
-   - The plan's notes: internal plus external thermal form one solve; core
-     temperature about 37.0 °C; Pulse hypothermia below 35 °C and hyperthermia
-     above 38.8 °C. Runs are hour-scale, so keep the tests short and anchor them on
-     measured effect sizes.
-   - Then the module, the generator, real-engine tests with mutation checks,
-     README/CLAUDE.md/plan notes, an adversarial review, and the release flow.
-   - Diagrams: `../engine/docs/Images/Energy/internalThermal.png`,
-     `Environment/EnvironmentCircuit.png`.
-2. Then Phase 4 ECMO and equipment (design an edge-triggered binding for one-shot
-   commands first), and Phase 5 the whole-body composite. Follow-ups are in the
-   plan.
-3. Earlier backlog, still open:
+0. **Scope decision (user, 2026-10-23):** Phase 4 is out of scope, except supplemental
+   oxygen, which moves into Phase 5. Phase 5 (a `supplemental_oxygen` module plus
+   `pulse_whole_body_circuits`) completes the agenda. Next is Phase 5, version 0.5.0.
+1. **Phase 4: ECMO and equipment**, now **out of scope**. Kept for reference: Branch `feat/circuit-equipment`
+   (or one branch per device if it grows), version 0.5.0.
+   - First, design an **edge-triggered binding** for one-shot commands
+     (ventilator hold, BVM squeeze). The level-setpoint `ActionBinding`
+     resends a whole group on change, which is wrong for commands.
+   - Then probe P9:
+     - which ECMO, BVM, supplemental-O2, anesthesia-machine and inhaler requests
+       Pulse serves;
+     - which actions have Python classes (the plan says the anesthesia
+       machine and inhaler have none);
+     - the ECMO caveats in the plan's follow-ups (always set the sweep gas
+       flow; mixing diffusion and rate parameters is an engine Fatal; ECMO's
+       blood loop shares the cardiovascular solve);
+     - at most one airway device can be active (`CircuitManager.cpp:191-216`).
+   - Then the modules, a generator, real-engine tests with mutation checks,
+     docs, an adversarial review, and the release flow.
+2. Phase 5: `pulse_whole_body_circuits`, every module on one engine.
+3. After Phase 5, in its own PR: the CI plan, with the protobuf pin
+   `>=7.35,<7.36` and `workspace-ci.yml` replaced (user decision, 2026-10-23).
+4. Earlier backlog, still open:
    - `CONTRIBUTING.md` and `.github/workflows/release.yml`.
    - Phase 5 investigation (`vwb scaffold-investigation --name pulse --studies
      viva_pulse.composites.hemorrhage.pulse_hemorrhage,viva_pulse.composites.hemorrhage.pulse_resuscitation`;

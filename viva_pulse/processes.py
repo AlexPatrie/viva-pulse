@@ -278,7 +278,9 @@ class PulseCircuitProcess(Process):
     returns NaN) raises at load or at the update where it appears, naming the
     request. A module's ``check_loaded`` sees its readings at load and can reject
     a state that contradicts its setpoint baselines. All changed setpoint groups
-    are validated before any action is sent.
+    are validated before any action is sent, as is the airway rule: at most one
+    module's ``airway_device`` connected, and none connecting in the update in
+    which another disconnects.
 
     WholeBody loads a stabilized ``state_file``. VentilationMechanics has no
     state files, so it initializes from ``patient_file`` and then settles (see
@@ -429,9 +431,33 @@ class PulseCircuitProcess(Process):
                     if binding.check_transition:
                         binding.check_transition(previous, values)
                     changed.append(((module.name, i), binding, values))
+        self._check_airway(state)
         for key, binding, values in changed:
             engine.process_action(binding.build(values, self.config))
             self._applied[key] = values
+
+    def _check_airway(self, state):
+        """Pulse allows one airway device at a time; a second one stalls the engine
+        ("Can only change airway mode from the Free mode"). A device may connect only
+        if no other device was connected before this update: in a one-update swap
+        Pulse can process the new device before the old one's disconnect."""
+        devices = []
+        for module in self._modules:
+            if module.airway_device is None:
+                continue
+            port = module.airway_device
+            i = next(i for i, b in enumerate(module.bindings) if port in b.ports)
+            devices.append((module.name, self._applied[(module.name, i)][port] == 1.0,
+                            float(state["setpoints"][module.name][port]) == 1.0))
+        now = [name for name, _, connected in devices if connected]
+        if len(now) > 1:
+            raise ValueError(f"only one airway device can be connected at a time, got {now}")
+        before = [name for name, connected, _ in devices if connected]
+        for name in now:
+            others = [other for other in before if other != name]
+            if name not in before and others:
+                raise ValueError(f"{name} cannot connect in the same update that {others[0]} "
+                                 f"disconnects; disconnect {others[0]} one update earlier")
 
     def update(self, state, interval):
         engine = self._ensure_engine()

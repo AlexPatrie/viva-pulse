@@ -13,6 +13,7 @@ from ..circuits.cardiovascular import CARDIOVASCULAR, HEMORRHAGE_COMPARTMENTS, M
 from ..circuits.respiratory import (
     INTUBATION_TYPES, MECHANICAL_VENTILATOR, MULTIPLIERS as RESPIRATORY_MULTIPLIERS, RESPIRATORY,
     VENTILATOR_BASELINE, VENTILATOR_MODES)
+from ..circuits.supplemental_oxygen import OXYGEN_BASELINE, OXYGEN_DEVICES, SUPPLEMENTAL_OXYGEN
 from ..circuits.thermal import ENVIRONMENT_BASELINE, THERMAL, THERMAL_APPLICATION_BASELINE
 from ..core import register_processes
 
@@ -77,6 +78,16 @@ _PATIENT_FILE = {"type": "string", "default": "StandardMale.json",
                  "description": "Patient in <install>/bin/patients (ventilation_mechanics only)"}
 
 
+_CARDIOVASCULAR_PARAMETERS = {
+    **_multiplier_parameters(MULTIPLIERS, "cardiovascular"),
+    "hemorrhage_compartment": {"type": "string", "default": "RightLeg",
+                               "choices": list(HEMORRHAGE_COMPARTMENTS),
+                               "description": "Hemorrhage site"},
+    "hemorrhage_severity": {"type": "float", "default": 0.0,
+                            "description": "Hemorrhage severity in [0, 1]; 0 = no bleed"},
+}
+
+
 @composite_generator(
     name="pulse_cardiovascular",
     description="The Pulse cardiovascular circuit (with its renal and tissue branches) in the real "
@@ -87,12 +98,7 @@ _PATIENT_FILE = {"type": "string", "default": "StandardMale.json",
                        "description": "Pulse engine running the circuit"},
         "state_file": _STATE_FILE,
         "interval": _INTERVAL,
-        **_multiplier_parameters(MULTIPLIERS, "cardiovascular"),
-        "hemorrhage_compartment": {"type": "string", "default": "RightLeg",
-                                   "choices": list(HEMORRHAGE_COMPARTMENTS),
-                                   "description": "Hemorrhage site"},
-        "hemorrhage_severity": {"type": "float", "default": 0.0,
-                                "description": "Hemorrhage severity in [0, 1]; 0 = no bleed"},
+        **_CARDIOVASCULAR_PARAMETERS,
     },
     core_extensions=[register_processes],
     default_n_steps=600,
@@ -245,6 +251,110 @@ def pulse_thermal(core=None, *, model_type="whole_body", state_file="StandardMal
         "pulse": circuit_node(["thermal"], model_type=model_type, state_file=state_file,
                               interval=interval),
         "interventions": {"thermal": setpoints},
+        "circuits": {},
+        "emitter": circuit_emitter(),
+    }
+
+
+_OXYGEN_DEVICE_PARAMETER = {
+    "oxygen_device": {"type": "string", "default": "NasalCannula", "choices": list(OXYGEN_DEVICES),
+                      "description": "Supplemental oxygen device used when oxygen_connected = 1"},
+}
+_OXYGEN_FLOW_PARAMETER = {
+    "oxygen_flow_L_per_min": {"type": "float", "default": OXYGEN_BASELINE["oxygen_flow_L_per_min"],
+                              "description": "Oxygen flow from a wall supply (Pulse's device defaults: "
+                                             "nasal cannula 3.5, simple mask 7.5, non-rebreather 10)"},
+}
+
+
+@composite_generator(
+    name="pulse_supplemental_oxygen",
+    description="Supplemental oxygen (nasal cannula, simple mask or non-rebreather mask) in the real "
+                "whole-body engine: the device circuit combined with the respiratory circuit, emitting "
+                "breathing mechanics, lung compartments, inspired oxygen and arterial blood gases.",
+    parameters={
+        "model_type": {"type": "string", "default": "whole_body", "choices": ["whole_body"],
+                       "description": "Pulse engine running the circuits"},
+        "state_file": _STATE_FILE,
+        "interval": _INTERVAL,
+        **_OXYGEN_DEVICE_PARAMETER,
+        "oxygen_connected": {"type": "float", "default": 1.0,
+                             "description": "1 = oxygen device on, 0 = off"},
+        **_OXYGEN_FLOW_PARAMETER,
+    },
+    core_extensions=[register_processes],
+    default_n_steps=300,
+    fidelity="real-bridge",
+)
+def pulse_supplemental_oxygen(core=None, *, model_type="whole_body", state_file="StandardMale@0s.json",
+                              interval=1.0, oxygen_device="NasalCannula", **overrides):
+    overrides.setdefault("oxygen_connected", 1.0)
+    config = {"oxygen_device": oxygen_device, "intubation_type": "Tracheal"}
+    SUPPLEMENTAL_OXYGEN.check_config(config)
+    oxygen = _setpoints(SUPPLEMENTAL_OXYGEN, overrides, config)
+    _reject_unknown(overrides)
+    return {
+        "pulse": circuit_node(["respiratory", "supplemental_oxygen"], model_type=model_type,
+                              state_file=state_file, interval=interval, oxygen_device=oxygen_device),
+        "interventions": {"respiratory": _setpoints(RESPIRATORY, {}, config),
+                          "supplemental_oxygen": oxygen},
+        "circuits": {},
+        "emitter": circuit_emitter(),
+    }
+
+
+WHOLE_BODY_MODULES = (CARDIOVASCULAR, RESPIRATORY, MECHANICAL_VENTILATOR, THERMAL, SUPPLEMENTAL_OXYGEN)
+
+
+@composite_generator(
+    name="pulse_whole_body_circuits",
+    description="Every circuit module on one real whole-body Pulse engine: cardiovascular (with renal "
+                "and tissue branches), respiratory, mechanical ventilator, thermal and supplemental "
+                "oxygen, so effects that cross circuits appear in one run. All setpoints start at "
+                "their baselines; the ventilator and oxygen start disconnected, and only one of them "
+                "can be connected at a time.",
+    parameters={
+        "model_type": {"type": "string", "default": "whole_body", "choices": ["whole_body"],
+                       "description": "Pulse engine running the circuits"},
+        "state_file": _STATE_FILE,
+        "interval": _INTERVAL,
+        **_CARDIOVASCULAR_PARAMETERS,
+        **{k: v for k, v in _RESPIRATORY_PARAMETERS.items()
+           if k not in ("model_type", "patient_file", "state_file", "interval")},
+        "intubated": {"type": "float", "default": 0.0, "description": "1 = intubated, 0 = not"},
+        "ventilator_mode": {"type": "string", "default": "AssistedControl", "choices": list(VENTILATOR_MODES),
+                            "description": "Pressure-control mode"},
+        **{port: {"type": "float", "default": value, "description": f"Ventilator {port.replace('_', ' ')}"}
+           for port, value in VENTILATOR_BASELINE.items()},
+        **{port: {"type": "float", "default": value, "description": _THERMAL_DESCRIPTIONS[port]}
+           for port, value in {**ENVIRONMENT_BASELINE, **THERMAL_APPLICATION_BASELINE}.items()},
+        **_OXYGEN_DEVICE_PARAMETER,
+        "oxygen_connected": {"type": "float", "default": 0.0,
+                             "description": "1 = oxygen device on, 0 = off"},
+        **_OXYGEN_FLOW_PARAMETER,
+    },
+    core_extensions=[register_processes],
+    default_n_steps=600,
+    fidelity="real-bridge",
+)
+def pulse_whole_body_circuits(core=None, *, model_type="whole_body", state_file="StandardMale@0s.json",
+                              interval=1.0, hemorrhage_compartment="RightLeg", intubation_type="Tracheal",
+                              ventilator_mode="AssistedControl", oxygen_device="NasalCannula", **overrides):
+    config = {"hemorrhage_compartment": hemorrhage_compartment, "intubation_type": intubation_type,
+              "ventilator_mode": ventilator_mode, "oxygen_device": oxygen_device}
+    for module in WHOLE_BODY_MODULES:
+        if module.check_config:
+            module.check_config(config)
+    interventions = {module.name: _setpoints(module, overrides, config) for module in WHOLE_BODY_MODULES}
+    _reject_unknown(overrides)
+    connected = [module.name for module in WHOLE_BODY_MODULES
+                 if module.airway_device and interventions[module.name][module.airway_device] == 1.0]
+    if len(connected) > 1:
+        raise ValueError(f"only one airway device can be connected at a time, got {connected}")
+    return {
+        "pulse": circuit_node([module.name for module in WHOLE_BODY_MODULES], model_type=model_type,
+                              state_file=state_file, interval=interval, **config),
+        "interventions": interventions,
         "circuits": {},
         "emitter": circuit_emitter(),
     }

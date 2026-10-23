@@ -13,7 +13,7 @@ Session state (active work, next steps, user instructions such as "do not commit
 The venv is `.venv` (uv-created, CPython 3.12.12, the same Python `PyPulse` was compiled against).
 
 ```bash
-uv run --no-sync pytest -q                                              # full suite, ~160 s, real engine
+uv run --no-sync pytest -q                                              # full suite, ~225 s, real engine
 uv run --no-sync pytest -q tests/test_processes.py::test_zero_severity_does_not_bleed   # one test
 ```
 
@@ -63,10 +63,16 @@ The per-circuit composite plan (approved 2026-10-22) is [docs/plan/plan-circuit-
       - `environment`: one `SEChangeEnvironmentalConditions`. It merges (Append); baselines are `environments/Standard.json`, which every shipped state uses. It includes the breathed-air temperature (`RespirationAmbientTemperature`, which drives respiration heat loss), which Pulse keeps separate from the ambient temperature. `CircuitModule.check_loaded` makes a state with another environment fail the load, because the first change would reset it.
       - `thermal_application`: one `SEThermalApplication`. Pulse replaces it whole; zero power with the applied temperature off removes it. The applied temperature is blended with ambient by its area fraction.
     - The StandardMale state is not thermally settled (skin 32.4 -> 30.0 °C over 30 min unperturbed), so tests compare against a parallel baseline run.
+  - `supplemental_oxygen.py`: the `supplemental_oxygen` module, whole_body only.
+    - 4 outputs under `oxygenation/`: FiO2, SpO2, PaO2, PaCO2. Device gas compartments are not exposed: the nasal cannula's pressure is NaN while it is off.
+    - Setpoints `oxygen_connected` and `oxygen_flow_L_per_min`; device type from config `oxygen_device`.
+    - Sent as `SESupplementalOxygen`: device `None` when disconnected (Pulse removes it), with wall supply (volume `inf`). A finite bottle would refill on every resend.
+  - **One airway device.** Two connected devices (ventilator plus oxygen) make every advance fail ("Can only change airway mode from the Free mode"). `CircuitModule.airway_device` names each module's 0/1 connect port; `PulseCircuitProcess._check_airway` raises when two are connected, or when one connects in the update another disconnects (Pulse can process the new device first). Probe P9.
   - A request Pulse can't serve returns NaN, so the process fails the load instead of emitting it.
 - `viva_pulse/core.py`: `build_core()` registers the processes explicitly on an `allocate_core()` core, because discovery can miss editable installs. Tests and any `studies/*/sims/run.py` should use it.
 - `viva_pulse/composites/hemorrhage.py`: `@composite_generator`s `pulse_hemorrhage` and `pulse_resuscitation` (`fidelity="real-bridge"`, `core_extensions=[register_processes]`). Store layout: `interventions/` (setpoints), `vitals/` (engine outputs), and a `RAMEmitter` step at `emitter`. `PulseProcess` runs at `interval: 1.0`, so a run of `N` simulated seconds emits `N + 1` rows, the first at t=0.
-- `viva_pulse/composites/circuits.py`: `circuit_node()` / `circuit_emitter()` wiring helpers, `_setpoints()` (module baselines plus overrides, validated when the document is built), and the generators `pulse_cardiovascular`, `pulse_respiratory`, `pulse_mechanical_ventilation` and `pulse_thermal`. The two respiratory generators default to `ventilation_mechanics`. Store layout: `interventions/<module>/`, `circuits/<module>/`, `circuits/irreversible_state`, and `emitter`, which emits both subtrees.
+- `viva_pulse/composites/circuits.py`: `circuit_node()` / `circuit_emitter()` wiring helpers, `_setpoints()` (module baselines plus overrides, validated when the document is built), and the generators `pulse_cardiovascular`, `pulse_respiratory`, `pulse_mechanical_ventilation`, `pulse_thermal`, `pulse_supplemental_oxygen` and `pulse_whole_body_circuits`.
+  - `pulse_whole_body_circuits` runs every whole-body module (`WHOLE_BODY_MODULES`) on one engine. Its flat parameters rely on setpoint and config names being unique across modules; a test enforces this. The two respiratory generators default to `ventilation_mechanics`. Store layout: `interventions/<module>/`, `circuits/<module>/`, `circuits/irreversible_state`, and `emitter`, which emits both subtrees.
 
 ## Tests
 
