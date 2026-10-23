@@ -1,0 +1,126 @@
+schema_version: 4
+name: hemorrhage-severity-sweep
+title: Hemorrhage severity sweep
+investigation: pulse-hemorrhage
+created: '2026-10-23'
+status: planned
+execution_status: planned
+phase: Design
+question: 'How do blood loss, heart rate and mean arterial pressure over 10 minutes
+
+  depend on the severity of a right-leg hemorrhage in the StandardMale patient?
+
+  '
+hypothesis: 'Blood lost and heart rate rise monotonically with severity, while mean
+
+  arterial pressure stays within 2 mmHg of its starting value for mild bleeds
+
+  (the baroreflex compensates by raising heart rate) and falls only once the
+
+  bleed is severe enough to outrun that compensation.
+
+  '
+objective: 'Run pulse_hemorrhage for 600 s at severity 0.0, 0.2, 0.4, 0.6, 0.8 and 1.0
+
+  (RightLeg, StandardMale) and compare the final vitals across the grid.
+
+  '
+baseline:
+- name: severity-0.8
+  composite: viva_pulse.composites.hemorrhage.pulse_hemorrhage
+  params:
+    state_file: StandardMale@0s.json
+    compartment: RightLeg
+    severity: 0.8
+variants:
+- name: severity-0.0
+  base_composite: severity-0.8
+  parameter_overrides:
+    severity: 0.0
+- name: severity-0.2
+  base_composite: severity-0.8
+  parameter_overrides:
+    severity: 0.2
+- name: severity-0.4
+  base_composite: severity-0.8
+  parameter_overrides:
+    severity: 0.4
+- name: severity-0.6
+  base_composite: severity-0.8
+  parameter_overrides:
+    severity: 0.6
+- name: severity-1.0
+  base_composite: severity-0.8
+  parameter_overrides:
+    severity: 1.0
+readouts:
+- name: mean-arterial-pressure
+  store_path: vitals.mean_arterial_pressure_mmHg
+  units: mmHg
+  status: available
+- name: heart-rate
+  store_path: vitals.heart_rate_bpm
+  units: 1/min
+  status: available
+- name: blood-volume
+  store_path: vitals.blood_volume_mL
+  units: mL
+  status: available
+- name: total-hemorrhaged-volume
+  store_path: vitals.total_hemorrhaged_volume_mL
+  units: mL
+  status: available
+- name: cardiac-output
+  store_path: vitals.cardiac_output_L_per_min
+  units: L/min
+  status: available
+- name: irreversible-state
+  store_path: vitals.irreversible_state
+  description: Pulse reported an irreversible state; the engine is no longer advanced.
+  status: available
+expected_behavior:
+- name: blood-loss-rises-with-severity
+  observable: vitals.total_hemorrhaged_volume_mL
+  condition: final value strictly increasing over severity 0.0 to 1.0
+  test: tests/test_severity.py::test_blood_loss_rises_with_severity
+- name: pressure-held-until-severe
+  observable: vitals.mean_arterial_pressure_mmHg
+  condition: within 2 mmHg of start at severity 0.2 and 0.4; at least 8 mmHg below start at 0.8
+  test: tests/test_severity.py::test_pressure_held_for_mild_bleeds, test_pressure_falls_for_severe_bleeds
+robustness:
+  n_replicates: 1
+  parameter_sweep: true
+  note: Pulse is deterministic; the severity-0.8 pilot reproduced the earlier reference run to 4 significant
+    figures.
+controls:
+- name: severity-0.0
+  kind: negative
+  hypothesis: With no bleed nothing is lost and the vitals stay at their loaded values.
+  expected: Less than 1 mL hemorrhaged; MAP and heart rate within 1 unit of their starting values.
+  observed: ''
+  result: PENDING
+preregistered:
+  registered_at: '2026-10-23'
+  criteria:
+  - tests/test_severity.py::test_no_bleed_control_is_flat
+  - tests/test_severity.py::test_blood_loss_rises_with_severity
+  - tests/test_severity.py::test_heart_rate_rises_with_severity
+  - tests/test_severity.py::test_pressure_held_for_mild_bleeds
+  - tests/test_severity.py::test_pressure_falls_for_severe_bleeds
+  - tests/test_severity.py::test_reproduces_reference_run
+  predictions:
+  - 'Pilot probe (direct pulse_hemorrhage runs, 600 s): severity 0.2 / 0.5 / 0.8 lost 386 / 1040 / 1577
+    mL; heart rate 76 / 95 / 107 bpm; MAP 95.0 / 94.8 / 84.1 mmHg from 95.3.'
+  thresholds_provenance: Thresholds come from that pilot probe and from the reference run in .build-progress.md
+    (RightLeg 0.8, 600 s, BV 3936 mL, MAP 84.1 mmHg).
+falsifiability: 'The hypothesis is refuted if blood loss or heart rate fails to increase with
+
+  severity, if MAP drops more than 2 mmHg at severity 0.2 or 0.4, or if MAP at
+
+  severity 0.8 is not at least 8 mmHg below its starting value.
+
+  '
+limitations:
+- One patient (StandardMale), one site (RightLeg) and 10 minutes; longer bleeds and other sites are not
+  covered.
+- Severity is Pulse's own dimensionless scale, not a calibrated flow rate.

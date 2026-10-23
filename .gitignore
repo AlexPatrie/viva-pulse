@@ -20,6 +20,12 @@ output/
 investigations/*/runs.db
 investigations/*/viz/
 investigations/*/.run.lock
+# Workbench study runs: runs.db is the run record and is committed; the per-run
+# scripts, rendered caches and SQLite sidecars are regenerated.
+workspace/studies/*/sims/
+workspace/studies/*/viz/
+workspace/studies/*/runs.db-wal
+workspace/studies/*/runs.db-shm
 workspace/reports/assets/*
 !workspace/reports/assets/.keep
 .superpowers/brainstorm/

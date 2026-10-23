@@ -1,0 +1,179 @@
+schema_version: 4
+name: patient-cohort
+title: Hemorrhage across the shipped patients
+investigation: pulse-hemorrhage
+created: '2026-10-23'
+status: planned
+execution_status: planned
+phase: Design
+question: 'Does the same right-leg hemorrhage (severity 0.8, 10 minutes) produce the
+
+  same qualitative response in all 21 patients that ship with Pulse, and how
+
+  does the fraction of blood lost depend on the patient''s starting blood volume?
+
+  '
+hypothesis: 'Every patient loses blood volume, raises heart rate and loses arterial
+
+  pressure. A bleed of the same severity removes a broadly similar absolute
+
+  volume, so patients with a smaller starting blood volume lose a larger
+
+  fraction of it.
+
+  '
+objective: 'Run pulse_hemorrhage (RightLeg, severity 0.8, 600 s) once from each of the 21
+
+  stabilized states in Pulse''s install (bin/states/*@0s.json) and compare the
+
+  final vitals and the fraction of blood lost.
+
+  '
+baseline:
+- name: StandardMale
+  composite: viva_pulse.composites.hemorrhage.pulse_hemorrhage
+  params:
+    state_file: StandardMale@0s.json
+    compartment: RightLeg
+    severity: 0.8
+variants:
+- name: Bradycardic
+  base_composite: StandardMale
+  parameter_overrides:
+    state_file: Bradycardic@0s.json
+- name: Carol
+  base_composite: StandardMale
+  parameter_overrides:
+    state_file: Carol@0s.json
+- name: Cynthia
+  base_composite: StandardMale
+  parameter_overrides:
+    state_file: Cynthia@0s.json
+- name: DefaultFemale
+  base_composite: StandardMale
+  parameter_overrides:
+    state_file: DefaultFemale@0s.json
+- name: DefaultMale
+  base_composite: StandardMale
+  parameter_overrides:
+    state_file: DefaultMale@0s.json
+- name: ExtremeFemale
+  base_composite: StandardMale
+  parameter_overrides:
+    state_file: ExtremeFemale@0s.json
+- name: ExtremeMale
+  base_composite: StandardMale
+  parameter_overrides:
+    state_file: ExtremeMale@0s.json
+- name: Gus
+  base_composite: StandardMale
+  parameter_overrides:
+    state_file: Gus@0s.json
+- name: Hassan
+  base_composite: StandardMale
+  parameter_overrides:
+    state_file: Hassan@0s.json
+- name: Jane
+  base_composite: StandardMale
+  parameter_overrides:
+    state_file: Jane@0s.json
+- name: Jeff
+  base_composite: StandardMale
+  parameter_overrides:
+    state_file: Jeff@0s.json
+- name: Joel
+  base_composite: StandardMale
+  parameter_overrides:
+    state_file: Joel@0s.json
+- name: Nathan
+  base_composite: StandardMale
+  parameter_overrides:
+    state_file: Nathan@0s.json
+- name: Overweight
+  base_composite: StandardMale
+  parameter_overrides:
+    state_file: Overweight@0s.json
+- name: Rick
+  base_composite: StandardMale
+  parameter_overrides:
+    state_file: Rick@0s.json
+- name: Soldier
+  base_composite: StandardMale
+  parameter_overrides:
+    state_file: Soldier@0s.json
+- name: StandardFemale
+  base_composite: StandardMale
+  parameter_overrides:
+    state_file: StandardFemale@0s.json
+- name: Tachycardic
+  base_composite: StandardMale
+  parameter_overrides:
+    state_file: Tachycardic@0s.json
+- name: Underweight
+  base_composite: StandardMale
+  parameter_overrides:
+    state_file: Underweight@0s.json
+- name: Ventilated
+  base_composite: StandardMale
+  parameter_overrides:
+    state_file: Ventilated@0s.json
+readouts:
+- name: mean-arterial-pressure
+  store_path: vitals.mean_arterial_pressure_mmHg
+  units: mmHg
+  status: available
+- name: heart-rate
+  store_path: vitals.heart_rate_bpm
+  units: 1/min
+  status: available
+- name: blood-volume
+  store_path: vitals.blood_volume_mL
+  units: mL
+  status: available
+- name: total-hemorrhaged-volume
+  store_path: vitals.total_hemorrhaged_volume_mL
+  units: mL
+  status: available
+- name: cardiac-output
+  store_path: vitals.cardiac_output_L_per_min
+  units: L/min
+  status: available
+- name: irreversible-state
+  store_path: vitals.irreversible_state
+  status: available
+  description: Pulse reported an irreversible state; the engine is no longer advanced.
+expected_behavior:
+- name: every-patient-compensates
+  observable: vitals.blood_volume_mL, vitals.heart_rate_bpm, vitals.mean_arterial_pressure_mmHg
+  condition: in all 21 patients blood volume and MAP fall and heart rate rises
+  test: tests/test_cohort.py::test_every_patient_bleeds_and_compensates
+- name: smaller-patients-lose-larger-fraction
+  observable: vitals.total_hemorrhaged_volume_mL / initial vitals.blood_volume_mL
+  condition: Spearman rank correlation with starting blood volume <= -0.7
+  test: tests/test_cohort.py::test_smaller_patients_lose_a_larger_fraction
+robustness:
+  n_replicates: 1
+  parameter_sweep: true
+  note: Pulse is deterministic; the cohort is a sweep over the patient state file.
+preregistered:
+  registered_at: '2026-10-23'
+  criteria:
+  - tests/test_cohort.py::test_every_shipped_patient_ran
+  - tests/test_cohort.py::test_every_patient_bleeds_and_compensates
+  - tests/test_cohort.py::test_smaller_patients_lose_a_larger_fraction
+  predictions:
+  - 'Pilot probe (direct pulse_hemorrhage runs, 600 s): all 21 states load; fraction lost ranges 23.8%
+    (Overweight) to 38.1% (Underweight); Spearman rank correlation of fraction lost with starting blood
+    volume is -0.91.'
+  thresholds_provenance: The -0.7 correlation threshold is set below that pilot value; the qualitative
+    criteria follow from the hypothesis.
+falsifiability: 'Refuted if any patient fails to load or run, if any patient''s blood volume,
+
+  heart rate or MAP moves the other way, or if the rank correlation of fraction
+
+  lost with starting blood volume is above -0.7.
+
+  '
+limitations:
+- The 21 patients are Pulse's shipped examples, not a population sample.
+- The same severity number does not mean the same bleeding rate in every patient.

@@ -1,0 +1,45 @@
+schema_version: 2
+name: pulse-hemorrhage
+title: Hemorrhage and resuscitation in the Pulse engine
+created: '2026-10-23'
+status: planning
+runtime:
+  default_emitter: sqlite
+studies: []
+expert_docs: []
+acceptance_criteria:
+- study: hemorrhage-severity-sweep
+  behavior: blood-loss-rises-with-severity
+- study: hemorrhage-severity-sweep
+  behavior: pressure-held-until-severe
+- study: fluid-resuscitation
+  behavior: treatment-preserves-volume-and-pressure
+- study: patient-cohort
+  behavior: every-patient-compensates
+- study: patient-cohort
+  behavior: smaller-patients-lose-larger-fraction
+members:
+- hemorrhage-severity-sweep
+- fluid-resuscitation
+- patient-cohort
+executive:
+  computed_verdict_status: in-progress
+  computed_acceptance:
+    criteria: []
+    unmet: []
+    diverges_from_authored: false
+question: 'How does the whole-body Pulse engine respond to a hemorrhage: how does the response scale with
+  bleed severity, does closed-loop fluid resuscitation change it, and does the same bleed behave the same
+  across Pulse''s 21 shipped patients?
+
+  '
+hypothesis: 'Blood loss scales with severity while the baroreflex holds arterial pressure until the bleed
+  is severe; a MAP-targeted infusion preserves blood volume and pressure; and every shipped patient compensates
+  the same way, with smaller patients losing a larger fraction of their blood.
+
+  '
+description: 'Three studies on the pulse_hemorrhage and pulse_resuscitation composites, run through the
+  workbench and recorded in each study''s runs.db. Their pass criteria are pytest files in each study''s
+  tests/ directory, registered before the canonical runs.
+
+  '

@@ -37,6 +37,11 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest", "plotly", "bigraph-viz"]
 
+# The workbench runs studies in this project's own venv (it is the only one
+# that can import PyPulse), so it is pinned to the main commit installed there.
+[tool.uv.sources]
+vivarium-workbench = { git = "https://github.com/vivarium-collective/vivarium-workbench.git", rev = "aa2b7d2b6f0c6c9d87bf5968e82694e522eb7ea9" }
+
 [tool.hatch.build.targets.wheel]
 packages = ["viva_pulse"]
 

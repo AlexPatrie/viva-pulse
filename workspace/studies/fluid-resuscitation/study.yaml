@@ -1,0 +1,120 @@
+schema_version: 4
+name: fluid-resuscitation
+title: Fluid resuscitation after hemorrhage
+investigation: pulse-hemorrhage
+created: '2026-10-23'
+status: planned
+execution_status: planned
+phase: Design
+question: 'After a severe right-leg hemorrhage, does a closed-loop MAP-targeted infusion
+
+  preserve blood volume and arterial pressure compared with no treatment, and
+
+  does the infused compound (saline vs whole blood) matter?
+
+  '
+hypothesis: 'Both treated arms end the 10 minutes with more blood volume and a higher mean
+
+  arterial pressure than the untreated arm, because the controller infuses
+
+  whenever MAP falls below its 90 mmHg target.
+
+  '
+objective: 'Run the same bleed (StandardMale, RightLeg, severity 0.8, 600 s) untreated
+
+  (pulse_hemorrhage), with the MAP-targeted saline controller
+
+  (pulse_resuscitation, target 90 mmHg, gain 25 mL/min per mmHg, cap 250 mL/min)
+
+  and with the same controller infusing whole blood.
+
+  '
+baseline:
+- name: untreated
+  composite: viva_pulse.composites.hemorrhage.pulse_hemorrhage
+  params:
+    state_file: StandardMale@0s.json
+    compartment: RightLeg
+    severity: 0.8
+- name: saline-map-90
+  composite: viva_pulse.composites.hemorrhage.pulse_resuscitation
+  params:
+    state_file: StandardMale@0s.json
+    compartment: RightLeg
+    severity: 0.8
+    compound: Saline
+    target_map_mmHg: 90.0
+    gain: 25.0
+    max_rate_mL_per_min: 250.0
+variants:
+- name: blood-map-90
+  base_composite: saline-map-90
+  parameter_overrides:
+    compound: Blood
+readouts:
+- name: mean-arterial-pressure
+  store_path: vitals.mean_arterial_pressure_mmHg
+  units: mmHg
+  status: available
+- name: heart-rate
+  store_path: vitals.heart_rate_bpm
+  units: 1/min
+  status: available
+- name: blood-volume
+  store_path: vitals.blood_volume_mL
+  units: mL
+  status: available
+- name: total-hemorrhaged-volume
+  store_path: vitals.total_hemorrhaged_volume_mL
+  units: mL
+  status: available
+- name: cardiac-output
+  store_path: vitals.cardiac_output_L_per_min
+  units: L/min
+  status: available
+- name: irreversible-state
+  store_path: vitals.irreversible_state
+  status: available
+  description: Pulse reported an irreversible state; the engine is no longer advanced.
+- name: iv-rate
+  store_path: interventions.iv_rate_mL_per_min
+  units: mL/min
+  status: available
+  description: Infusion rate commanded by the MAP controller (0 in the untreated arm).
+expected_behavior:
+- name: treatment-preserves-volume-and-pressure
+  observable: vitals.blood_volume_mL, vitals.mean_arterial_pressure_mmHg
+  condition: both treated arms end with more blood volume and a higher MAP than the untreated arm
+  test: tests/test_resuscitation.py::test_treated_arms_preserve_blood_volume, test_treated_arms_preserve_pressure
+controls:
+- name: untreated
+  kind: negative
+  hypothesis: Without treatment the bleed runs its course; this is the reference the treated arms must
+    beat.
+  expected: Final blood volume 3936 mL and MAP 84.1 mmHg, the reference run in .build-progress.md.
+  observed: ''
+  result: PENDING
+robustness:
+  n_replicates: 1
+  parameter_sweep: false
+  note: Pulse is deterministic; the untreated arm reproduces the earlier reference run.
+preregistered:
+  registered_at: '2026-10-23'
+  criteria:
+  - tests/test_resuscitation.py::test_untreated_arm_reproduces_reference
+  - tests/test_resuscitation.py::test_controller_engages_in_treated_arms
+  - tests/test_resuscitation.py::test_treated_arms_preserve_blood_volume
+  - tests/test_resuscitation.py::test_treated_arms_preserve_pressure
+  predictions:
+  - 'Reference results (.build-progress.md, StandardMale RightLeg 0.8, 600 s): untreated MAP 84.1 mmHg,
+    BV 3936 mL; saline controller (target 90) MAP 86.3 mmHg, BV 4014 mL.'
+  - Whole blood has not been run before; only the direction (better than untreated) is predicted, not
+    its size relative to saline.
+falsifiability: 'Refuted if either treated arm ends with no more blood volume, or no higher
+
+  MAP, than the untreated arm, or if the controller never infuses.
+
+  '
+limitations:
+- One bleed, one patient and one controller tuning; the controller target and gain are not swept here.
+- 10 minutes only; the longer-term effect of dilution with saline is not covered.
