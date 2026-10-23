@@ -10,17 +10,20 @@ Store layout:
 from process_bigraph.composite_generator import composite_generator
 
 from ..circuits.cardiovascular import CARDIOVASCULAR, HEMORRHAGE_COMPARTMENTS, MULTIPLIERS
+from ..circuits.respiratory import (
+    INTUBATION_TYPES, MECHANICAL_VENTILATOR, MULTIPLIERS as RESPIRATORY_MULTIPLIERS, RESPIRATORY,
+    VENTILATOR_BASELINE, VENTILATOR_MODES)
 from ..core import register_processes
 
 
 def circuit_node(modules, *, model_type="whole_body", state_file="StandardMale@0s.json",
-                 interval=1.0, **params):
+                 patient_file="StandardMale.json", interval=1.0, **params):
     """A ``PulseCircuitProcess`` node wired to the standard store layout."""
     return {
         "_type": "process",
         "address": "local:PulseCircuitProcess",
         "config": {"model_type": model_type, "modules": list(modules),
-                   "state_file": state_file, **params},
+                   "state_file": state_file, "patient_file": patient_file, **params},
         "interval": interval,
         "inputs": {"setpoints": ["interventions"]},
         "outputs": {**{name: ["circuits", name] for name in modules},
@@ -39,11 +42,38 @@ def circuit_emitter():
     }
 
 
-_MULTIPLIER_PARAMETERS = {
-    f"{name}_multiplier": {"type": "float", "default": 1.0,
-                           "description": f"Pulse cardiovascular {name.replace('_', ' ')} multiplier (1.0 = unmodified)"}
-    for name in MULTIPLIERS
-}
+def _setpoints(module, overrides, config):
+    """The module's setpoint values: baselines updated from ``overrides`` (popped),
+    each group validated with the same check the process applies at run time, so
+    a bad parameter fails when the document is built."""
+    values = {}
+    for binding in module.bindings:
+        group = {port: float(overrides.pop(port, default)) for port, default in binding.ports.items()}
+        if binding.validate:
+            binding.validate(group, config)
+        values.update(group)
+    return values
+
+
+def _reject_unknown(overrides):
+    if overrides:
+        raise TypeError(f"unexpected parameters: {sorted(overrides)}")
+
+
+def _multiplier_parameters(names, system):
+    return {f"{name}_multiplier": {"type": "float", "default": 1.0,
+                                   "description": f"Pulse {system} {name.replace('_', ' ')} multiplier (1.0 = unmodified)"}
+            for name in names}
+
+
+_INTERVAL = {"type": "float", "default": 1.0,
+             "description": "Seconds per update; 0.02 (Pulse's timestep) resolves per-beat/per-breath "
+                            "waveforms. A non-binary-exact interval can lose the final update of a run "
+                            "to float time accumulation."}
+_STATE_FILE = {"type": "string", "default": "StandardMale@0s.json",
+               "description": "Stabilized Pulse patient state in <install>/bin/states (whole_body only)"}
+_PATIENT_FILE = {"type": "string", "default": "StandardMale.json",
+                 "description": "Patient in <install>/bin/patients (ventilation_mechanics only)"}
 
 
 @composite_generator(
@@ -54,13 +84,9 @@ _MULTIPLIER_PARAMETERS = {
     parameters={
         "model_type": {"type": "string", "default": "whole_body", "choices": ["whole_body"],
                        "description": "Pulse engine running the circuit"},
-        "state_file": {"type": "string", "default": "StandardMale@0s.json",
-                       "description": "Stabilized Pulse patient state in <install>/bin/states"},
-        "interval": {"type": "float", "default": 1.0,
-                     "description": "Seconds per update; 0.02 (Pulse's timestep) resolves per-beat "
-                                    "waveforms. A non-binary-exact interval can lose the final "
-                                    "update of a run to float time accumulation."},
-        **_MULTIPLIER_PARAMETERS,
+        "state_file": _STATE_FILE,
+        "interval": _INTERVAL,
+        **_multiplier_parameters(MULTIPLIERS, "cardiovascular"),
         "hemorrhage_compartment": {"type": "string", "default": "RightLeg",
                                    "choices": list(HEMORRHAGE_COMPARTMENTS),
                                    "description": "Hemorrhage site"},
@@ -72,21 +98,101 @@ _MULTIPLIER_PARAMETERS = {
     fidelity="real-bridge",
 )
 def pulse_cardiovascular(core=None, *, model_type="whole_body", state_file="StandardMale@0s.json",
-                         interval=1.0, hemorrhage_compartment="RightLeg", hemorrhage_severity=0.0,
-                         **multipliers):
-    setpoints = {f"{name}_multiplier": float(multipliers.pop(f"{name}_multiplier", 1.0))
-                 for name in MULTIPLIERS}
-    if multipliers:
-        raise TypeError(f"unexpected parameters: {sorted(multipliers)}")
-    setpoints["hemorrhage_severity"] = float(hemorrhage_severity)
-    # Fail at document build time, with the same checks the process applies at run time.
-    CARDIOVASCULAR.check_config({"hemorrhage_compartment": hemorrhage_compartment})
-    for binding in CARDIOVASCULAR.bindings:
-        binding.validate({port: setpoints[port] for port in binding.ports}, {})
+                         interval=1.0, hemorrhage_compartment="RightLeg", **overrides):
+    config = {"hemorrhage_compartment": hemorrhage_compartment}
+    CARDIOVASCULAR.check_config(config)
+    setpoints = _setpoints(CARDIOVASCULAR, overrides, config)
+    _reject_unknown(overrides)
     return {
         "pulse": circuit_node(["cardiovascular"], model_type=model_type, state_file=state_file,
                               interval=interval, hemorrhage_compartment=hemorrhage_compartment),
         "interventions": {"cardiovascular": setpoints},
+        "circuits": {},
+        "emitter": circuit_emitter(),
+    }
+
+
+_RESPIRATORY_PARAMETERS = {
+    "model_type": {"type": "string", "default": "ventilation_mechanics",
+                   "choices": ["ventilation_mechanics", "whole_body"],
+                   "description": "ventilation_mechanics = the airway circuit alone (no blood, no "
+                                  "chemoreflex); whole_body = coupled to the rest of the body"},
+    "patient_file": _PATIENT_FILE,
+    "state_file": _STATE_FILE,
+    "interval": _INTERVAL,
+    **_multiplier_parameters(RESPIRATORY_MULTIPLIERS, "respiratory"),
+    "intubation_type": {"type": "string", "default": "Tracheal", "choices": list(INTUBATION_TYPES),
+                        "description": "Tube placement used when intubated = 1"},
+}
+
+
+@composite_generator(
+    name="pulse_respiratory",
+    description="The Pulse respiratory (airway) circuit, alone in the VentilationMechanics engine or "
+                "coupled in the whole-body engine: breathing mechanics plus per-compartment lung and "
+                "pleural pressures, volumes and flows, driven by resistance/compliance multipliers "
+                "and intubation.",
+    parameters={
+        **_RESPIRATORY_PARAMETERS,
+        "intubated": {"type": "float", "default": 0.0, "description": "1 = intubated, 0 = not"},
+    },
+    core_extensions=[register_processes],
+    default_n_steps=120,
+    fidelity="real-bridge",
+)
+def pulse_respiratory(core=None, *, model_type="ventilation_mechanics", patient_file="StandardMale.json",
+                      state_file="StandardMale@0s.json", interval=1.0, intubation_type="Tracheal",
+                      **overrides):
+    config = {"intubation_type": intubation_type}
+    RESPIRATORY.check_config(config)
+    setpoints = _setpoints(RESPIRATORY, overrides, config)
+    _reject_unknown(overrides)
+    return {
+        "pulse": circuit_node(["respiratory"], model_type=model_type, state_file=state_file,
+                              patient_file=patient_file, interval=interval,
+                              intubation_type=intubation_type),
+        "interventions": {"respiratory": setpoints},
+        "circuits": {},
+        "emitter": circuit_emitter(),
+    }
+
+
+@composite_generator(
+    name="pulse_mechanical_ventilation",
+    description="A patient on a pressure-control mechanical ventilator in the real Pulse engine: the "
+                "respiratory circuit combined with the ventilator circuit, emitting breathing "
+                "mechanics, lung compartments and the ventilator's monitor values. Defaults follow "
+                "Pulse's HowTo_VentilationMechanics (intubated; PC-AC 19/5 cmH2O, 12 bpm).",
+    parameters={
+        **_RESPIRATORY_PARAMETERS,
+        "intubated": {"type": "float", "default": 1.0, "description": "1 = intubated (tube), 0 = mask"},
+        "ventilator_mode": {"type": "string", "default": "AssistedControl", "choices": list(VENTILATOR_MODES),
+                            "description": "Pressure-control mode"},
+        **{port: {"type": "float", "default": (1.0 if port == "connected" else value),
+                  "description": f"Ventilator {port.replace('_', ' ')}"}
+           for port, value in VENTILATOR_BASELINE.items()},
+    },
+    core_extensions=[register_processes],
+    default_n_steps=120,
+    fidelity="real-bridge",
+)
+def pulse_mechanical_ventilation(core=None, *, model_type="ventilation_mechanics",
+                                 patient_file="StandardMale.json", state_file="StandardMale@0s.json",
+                                 interval=1.0, intubation_type="Tracheal",
+                                 ventilator_mode="AssistedControl", **overrides):
+    overrides.setdefault("intubated", 1.0)
+    overrides.setdefault("connected", 1.0)
+    config = {"intubation_type": intubation_type, "ventilator_mode": ventilator_mode}
+    RESPIRATORY.check_config(config)
+    MECHANICAL_VENTILATOR.check_config(config)
+    respiratory = _setpoints(RESPIRATORY, overrides, config)
+    ventilator = _setpoints(MECHANICAL_VENTILATOR, overrides, config)
+    _reject_unknown(overrides)
+    return {
+        "pulse": circuit_node(["respiratory", "mechanical_ventilator"], model_type=model_type,
+                              state_file=state_file, patient_file=patient_file, interval=interval,
+                              **config),
+        "interventions": {"respiratory": respiratory, "mechanical_ventilator": ventilator},
         "circuits": {},
         "emitter": circuit_emitter(),
     }

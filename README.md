@@ -6,10 +6,10 @@ A [process-bigraph](https://github.com/vivarium-collective/process-bigraph) wrap
 
 - **Available:**
   - processes: `PulseProcess`, `PulseCircuitProcess`, `MapFluidController`;
-  - composites: `pulse_hemorrhage`, `pulse_resuscitation`, `pulse_cardiovascular` (the first per-circuit composite).
+  - composites: `pulse_hemorrhage`, `pulse_resuscitation`, and the per-circuit composites `pulse_cardiovascular`, `pulse_respiratory`, `pulse_mechanical_ventilation`.
 
   All are tested against the real engine.
-- **Planned:** per-circuit composites for respiratory and ventilator, thermal, and ECMO and other equipment. See [docs/plan/plan-circuit-composites.md](docs/plan/plan-circuit-composites.md).
+- **Planned:** per-circuit composites for thermal, and ECMO and other equipment. See [docs/plan/plan-circuit-composites.md](docs/plan/plan-circuit-composites.md).
 
 ## Requirements
 
@@ -70,8 +70,16 @@ rows = gather_emitter_results(sim)[("emitter",)]
 | `pulse_hemorrhage` | Untreated hemorrhage at a chosen compartment and severity. Emits vital signs every second. |
 | `pulse_resuscitation` | The same hemorrhage plus a closed-loop IV fluid controller that targets mean arterial pressure. |
 | `pulse_cardiovascular` | The cardiovascular circuit, including its renal and tissue branches. Emits pressure, volume, inflow and outflow for 32 vascular regions, plus 20 hemodynamic values. Driven by Pulse's resistance and compliance multipliers and a hemorrhage. |
+| `pulse_respiratory` | The respiratory (airway) circuit, either alone in Pulse's ventilation-mechanics engine (default) or coupled in the whole-body engine. Emits 24 breathing-mechanics values plus pressure, volume, inflow and outflow for 8 lung and pleural regions. Driven by Pulse's 10 respiratory resistance and compliance multipliers and intubation. |
+| `pulse_mechanical_ventilation` | The same, with a pressure-control mechanical ventilator connected, plus the ventilator's 18 monitor values. Defaults follow Kitware's HowTo: intubated, AC mode, 19/5 cmH2O, 12 breaths/min. Settings, including `connected`, can change mid-run. |
 
-All three use `fidelity="real-bridge"`. Patients load from Pulse's stabilized state files (`<install>/bin/states/*.json`, default `StandardMale@0s.json`).
+All use `fidelity="real-bridge"`.
+
+- **Whole-body runs** load Pulse's stabilized state files (`<install>/bin/states/*.json`, default `StandardMale@0s.json`).
+- **Ventilation-mechanics runs** have no state files. They start from a patient file (`<install>/bin/patients/*.json`, default `StandardMale.json`), then settle before t=0 until every requested value is defined, which takes about one breath.
+- Setting the file the chosen engine doesn't use (a `state_file` on ventilation-mechanics, a `patient_file` on whole-body) raises an error instead of being ignored.
+- Setpoints apply from the first update. In `pulse_mechanical_ventilation`, the patient settles breathing spontaneously, so row 0 shows the ventilator monitor at 0 even though `interventions` say `connected=1`. The monitor values appear once the first ventilated breath completes, a few seconds in.
+- In `AssistedControl` mode, a ventilator rate above the patient's own can lock Pulse into auto-triggering (about 50 breaths/min with high intrinsic PEEP). This is Pulse's own behavior and reproduces through its API alone. Use `ContinuousMandatoryVentilation` when the set rate must hold.
 
 ### Processes
 
@@ -82,7 +90,8 @@ All three use `fidelity="real-bridge"`. Patients load from Pulse's stabilized st
 - **`PulseCircuitProcess`**: one real Pulse engine exposing the circuit modules named in `config.modules` (see `viva_pulse/circuits/`).
   - Each module's readings are a nested subtree of `float` delta ports. For example, `cardiovascular/central/aorta/pressure_mmHg` is wired to `circuits/cardiovascular/...`.
   - Its setpoints sit under the `setpoints` input port and are wired to `interventions/<module>/...`. Each defaults to its baseline (multipliers 1.0, hemorrhage 0.0) and is sent to Pulse only when it changes.
-  - Identical requests from several modules share one Pulse request. A request Pulse cannot serve fails the load instead of emitting NaN.
+  - Identical requests from several modules share one Pulse request. A request Pulse cannot serve fails the load, or the update where it appears, instead of emitting NaN.
+  - `model_type` selects the engine: `whole_body`, or `ventilation_mechanics`, which has the airway only (no blood or chemoreflex). Each module declares which engines it supports.
 - **`MapFluidController`**: a proportional `Step` that maps mean arterial pressure to IV infusion rate.
 
 ## Pulse circuits
@@ -109,13 +118,37 @@ Region readings are instantaneous within each heartbeat. Use `interval=0.02` (Pu
 
 *Pulse cardiovascular circuit diagram. Copyright Kitware, Inc. and Contributors, Apache License 2.0, from `engine/docs/Images/Cardiovascular/CardiovascularCircuit.png`.*
 
+### Respiratory circuit, alone or coupled
+
+`pulse_respiratory` runs the same module on either engine. That shows how much of a response comes from the airway circuit itself and how much from the rest of the body:
+
+```python
+from process_bigraph import Composite, gather_emitter_results
+
+from viva_pulse.composites import pulse_respiratory
+from viva_pulse.core import build_core
+
+for engine in ("ventilation_mechanics", "whole_body"):
+    core = build_core()
+    doc = pulse_respiratory(core, model_type=engine,
+                            left_compliance_multiplier=0.5, right_compliance_multiplier=0.5)
+    sim = Composite({"state": doc}, core=core)
+    sim.run(60)
+    mechanics = gather_emitter_results(sim)[("emitter",)][-1]["circuits"]["respiratory"]["mechanics"]
+    print(engine, round(mechanics["tidal_volume_mL"]), round(mechanics["respiration_rate_bpm"], 1))
+# ventilation_mechanics 270 12.0   <- stiffer lungs, no compensation
+# whole_body 388 15.0              <- the chemoreflex raises the breathing rate
+```
+
+Lung and pleural region pressures (`absolute_pressure_cmH2O`) are absolute, with Pulse's ambient at 1033.2 cmH2O. The `mechanics` pressures are relative to atmosphere. Intubation is one-way, because Pulse's Python API drops extubation actions; setting `intubated` from 1 back to 0 raises an error rather than leaving the store and the engine out of sync.
+
 ## Tests
 
 ```bash
 uv run --no-sync pytest -q
 ```
 
-The full suite takes about 80 s. Every engine-dependent test drives the real Pulse build; nothing is mocked. Where a test needs an expected value, it loads its own engine directly through Pulse's Python API.
+The full suite takes about 100 s. Every engine-dependent test drives the real Pulse build; nothing is mocked. Where a test needs an expected value, it loads its own engine directly through Pulse's Python API.
 
 ## Regarding using the Python binding
 

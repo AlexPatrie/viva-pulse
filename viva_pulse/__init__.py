@@ -1,7 +1,9 @@
 """viva-pulse: process-bigraph bridge to the Kitware Pulse Physiology Engine."""
 
 from .processes import MapFluidController, PulseCircuitProcess, PulseProcess
-from .composites import pulse_cardiovascular, pulse_hemorrhage, pulse_resuscitation
+from .composites import (pulse_cardiovascular, pulse_hemorrhage, pulse_mechanical_ventilation,
+                         pulse_respiratory, pulse_resuscitation)
 
 __all__ = ["PulseProcess", "PulseCircuitProcess", "MapFluidController",
-           "pulse_cardiovascular", "pulse_hemorrhage", "pulse_resuscitation"]
+           "pulse_cardiovascular", "pulse_hemorrhage", "pulse_mechanical_ventilation",
+           "pulse_respiratory", "pulse_resuscitation"]

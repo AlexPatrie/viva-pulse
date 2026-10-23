@@ -24,7 +24,8 @@ RESERVED_NAMES = frozenset({"setpoints", "irreversible_state"})
 class Request:
     """One Pulse data request, emitted at ``path`` inside its module's port tree.
 
-    ``category`` is ``"physiology"`` or ``"liquid_compartment"``. ``unit`` is
+    ``category`` is ``"physiology"``, ``"liquid_compartment"``,
+    ``"gas_compartment"`` or ``"mechanical_ventilator"``. ``unit`` is
     ``(unit class in pulse.cdm.scalars, unit attribute)``, or None for unitless.
     Compartment property names are Pulse's own spelling: ``Pressure``,
     ``Volume``, ``Inflow``, ``Outflow`` (``SEDataRequestTracker.cpp``).
@@ -50,6 +51,11 @@ class Request:
         if self.category == "liquid_compartment":
             return SEDataRequest.create_liquid_compartment_request(
                 self.compartment, self.property, unit=unit)
+        if self.category == "gas_compartment":
+            return SEDataRequest.create_gas_compartment_request(
+                self.compartment, self.property, unit=unit)
+        if self.category == "mechanical_ventilator":
+            return SEDataRequest.create_mechanical_ventilator_request(self.property, unit=unit)
         raise ValueError(f"unsupported data request category {self.category!r}")
 
 
@@ -60,12 +66,15 @@ class ActionBinding:
     ``ports`` maps each port name to its baseline value (the value at which no
     action is needed). Whenever any port in the group changes, ``build`` is
     called with every port's current value plus the process config and returns
-    the Pulse action to send. ``validate`` raises ``ValueError`` on bad values.
+    the Pulse action to send. ``validate`` raises ``ValueError`` on bad values;
+    ``check_transition(previous, values)`` raises ``ValueError`` on a change
+    Pulse cannot make (e.g. one its Python API silently drops).
     """
 
     ports: dict[str, float]
     build: Callable[[dict[str, float], dict[str, Any]], Any]
     validate: Callable[[dict[str, float], dict[str, Any]], None] | None = None
+    check_transition: Callable[[dict[str, float], dict[str, float]], None] | None = None
 
 
 @dataclass(frozen=True)
