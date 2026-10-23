@@ -5,14 +5,16 @@ mode, REAL bridge to the Kitware Pulse Physiology Engine. Wrapper repo is
 this directory (user-chosen). Build pins, phase ledger, probe results and
 workarounds: [.build-progress.md](.build-progress.md) — read it first.
 
-**Active agenda:** `agenda.md` (repo root, name `circuit-composites`): "fully
-implement and complete" [docs/plan/plan-circuit-composites.md](docs/plan/plan-circuit-composites.md).
-`agenda.md` is kept out of git via `.git/info/exclude` (user, 2026-10-22).
+**Active agenda:** `agenda.md` (repo root, name `post-initial-wrapping`), swapped in on
+2026-10-23. The completed `circuit-composites` agenda is archived at
+`docs/agenda/circuit-composites/agenda.md`. Both are git-excluded (the `agenda.md`
+line in `.git/info/exclude` matches every `agenda.md`).
 
 **Standing user instructions (2026-10-22):**
-- Commits: the user approved the full release flow per phase (branch, PR,
-  merge, tag, GitHub Release) and granted merge permission "when ready and
-  safe" (2026-10-23). Anything outside that flow still needs asking. Never
+- **Releases need an explicit go-ahead each time** (user, 2026-10-23: "wait for my
+  explicit go ahead on a release after asking me"). Ask, then wait; don't watch
+  image builds unless asked. Merge permission "when ready and safe" (2026-10-23)
+  still covers merges. Anything else still needs asking. Never
   push to `main` directly, **except Phase 5**: the user said to "commit and do all
   the full phase 5 work directly on main" (2026-10-23). The tag and GitHub Release
   still follow.
@@ -67,9 +69,9 @@ implement and complete" [docs/plan/plan-circuit-composites.md](docs/plan/plan-ci
     - v0.3.0: succeeded (run 39903606704). Check later builds with
       `gh run list --workflow build-and-push.yml`.
 
-### Phase 5 in progress (2026-10-23): supplemental oxygen + every module, v0.5.0, on `main`
+### Phase 5 released (2026-10-23): v0.5.0, the agenda is complete
 
-- **Built, uncommitted on `main`.**
+- **Built** (now committed as `9adeca1`).
   - `circuits/supplemental_oxygen.py`.
   - `CircuitModule.airway_device`; the ventilator declares `connected`.
   - `PulseCircuitProcess._check_airway`.
@@ -83,10 +85,11 @@ implement and complete" [docs/plan/plan-circuit-composites.md](docs/plan/plan-ci
   - Mutants P1-P11 all caught: device, flow, finite tank, disconnect, airway check, swap rule, ventilator undeclared, build-time check, a module dropped, PaO2 unit, slot mapping.
 - **Docs updated.** README (verified whole-body example), CLAUDE.md, plan Phase 5 notes, `.build-progress.md`. The user's own README edits ("Regarding..." restructure, electrical-circuit analogy) ride along.
 - **Adversarial review skipped** at the user's request ("let's just get this agenda finished", 2026-10-23); the review subagent was stopped.
-- **Next.**
-  3. Commit on `main` and push.
-  4. Tag `v0.5.0`, Release, and check the image build.
-  5. Tick the agenda: Phase 5 completes it.
+- **Released.**
+  - Commit `9adeca1` on `main`, pushed.
+  - Annotated tag `v0.5.0` and a GitHub Release (created before the user's new release rule).
+  - The image build was not checked: the user said to stop following releases.
+- **The agenda `circuit-composites` is complete** (`agenda.md` status: complete).
 
 ### Phase 3 released (2026-10-23): v0.4.0 (thermal)
 
@@ -197,38 +200,39 @@ implement and complete" [docs/plan/plan-circuit-composites.md](docs/plan/plan-ci
   Python silently falls back to WholeBody (`PulseEngine.py:46-49`). Fixing it
   is an optional, deferred local `../engine` track.
 
-### Next
+### Task 1: workbench studies (2026-10-23, done on `main`, user-approved; not released)
 
-0. **Scope decision (user, 2026-10-23):** Phase 4 is out of scope, except supplemental
-   oxygen, which moves into Phase 5. Phase 5 (a `supplemental_oxygen` module plus
-   `pulse_whole_body_circuits`) completes the agenda. Next is Phase 5, version 0.5.0.
-1. **Phase 4: ECMO and equipment**, now **out of scope**. Kept for reference: Branch `feat/circuit-equipment`
-   (or one branch per device if it grows), version 0.5.0.
-   - First, design an **edge-triggered binding** for one-shot commands
-     (ventilator hold, BVM squeeze). The level-setpoint `ActionBinding`
-     resends a whole group on change, which is wrong for commands.
-   - Then probe P9:
-     - which ECMO, BVM, supplemental-O2, anesthesia-machine and inhaler requests
-       Pulse serves;
-     - which actions have Python classes (the plan says the anesthesia
-       machine and inhaler have none);
-     - the ECMO caveats in the plan's follow-ups (always set the sweep gas
-       flow; mixing diffusion and rate parameters is an engine Fatal; ECMO's
-       blood loop shares the cardiovascular solve);
-     - at most one airway device can be active (`CircuitManager.cpp:191-216`).
-   - Then the modules, a generator, real-engine tests with mutation checks,
-     docs, an adversarial review, and the release flow.
-2. Phase 5: `pulse_whole_body_circuits`, every module on one engine.
-3. After Phase 5, in its own PR: the CI plan, with the protobuf pin
-   `>=7.35,<7.36` and `workspace-ci.yml` replaced (user decision, 2026-10-23).
-4. Earlier backlog, still open:
-   - `CONTRIBUTING.md` and `.github/workflows/release.yml`.
-   - Phase 5 investigation (`vwb scaffold-investigation --name pulse --studies
-     viva_pulse.composites.hemorrhage.pulse_hemorrhage,viva_pulse.composites.hemorrhage.pulse_resuscitation`;
-     fill `expected_behavior`/`behavior_tests` from the reference results below;
-     `studies/*/sims/run.py` with `build_core()`; Plotly viz, loading the
-     `dataviz` skill first).
-   - Optionally, `pulse_cardiovascular` in that investigation.
+- **Setup.** vivarium-workbench `main` (`aa2b7d2b`, 0.4.1) in `.venv`, pinned in `[tool.uv.sources]`; protobuf stayed 7.35.0, python-dateutil 3.0.0 -> 2.9.0.post0 (botocore caps it). Server served from `.venv` (`.venv/bin/vwb serve --detach`; it was left running).
+- **Commits on `main`:** `89d2579` criteria + specs, `5754940` run configuration + figures + version 0.6.0, `99d742b` canonical runs + findings + review fixes, then the rendered report.
+- **Runs.** `/api/investigation-run-unblocked`, 30/30 completed, manifests at `5754940`, Python 3.12.12; records in each study's committed `runs.db` (16 MB total). Criteria 7/7, 7/7, 23/23. Full suite 188 passed, 1 skipped; workspace lint OK.
+- **Results:** README "Studies in the workbench". Saline vs whole blood indistinguishable in 10 min (controller engages at 508 s, delivers 79.6 mL); follow-up proposed in the study.
+- **Honesty notes.** Criteria were written after direct pilots (`workspace/experiments/_runs.yaml`) that overlap some canonical configurations (severity 0.2/0.8, the whole cohort); each study's `preregistered.pilot` says so.
+- **Adversarial review** done: no blockers; all should-fixes applied (fixture ties labels to params/commit/irreversibility, numeric figure guard, read-only db, `iv_compound` check, pilot disclosure, number fixes).
+- **Report.** Rendered with `force`: 18 `readout_contract` overrides logged to `.pbg/report-lint-overrides.json` (gitignored), all the documented `vitals.*` false positive. The dashboard's study cards show "Tests 0/2" (gate ignores pytest results; upstream issue 6).
+- **Open.**
+  - Once (of four full-suite runs) `test_whole_body.py::test_combined_readings_equal_the_single_module_composites` failed at rel 1e-4, while another engine-heavy process (the reviewer's suites) ran concurrently. Not reproduced since (isolated, file, two full runs). Unexplained; watch for it.
+  - Workbench issues: 6 drafted in `upstream-issues/vivarium-workbench.md` (user files them).
+  - **Release v0.6.0 needs the user's explicit go-ahead.** Not pushed yet unless stated in the session summary.
+
+### Standing by
+
+The circuit-composites agenda is complete. **The remaining work is noted in
+`agenda.md` under "Remaining work: pick up later"**, which travels with that
+agenda when it's archived to `docs/agenda/circuit-composites/agenda.md`. Each item
+waits for the user:
+- the CI-plan PR (not until asked);
+- the 14 upstream issue drafts in `upstream-issues/` (the user files them);
+- the earlier backlog: `CONTRIBUTING.md`, `.github/workflows/release.yml`, and a
+  workbench investigation over `pulse_hemorrhage`/`pulse_resuscitation`
+  (`vwb scaffold-investigation --name pulse --studies
+  viva_pulse.composites.hemorrhage.pulse_hemorrhage,viva_pulse.composites.hemorrhage.pulse_resuscitation`;
+  `expected_behavior` from the reference results below; `studies/*/sims/run.py`
+  with `build_core()`; Plotly viz after loading the `dataviz` skill);
+- unverified: the v0.5.0 image build (`gh run list --workflow build-and-push.yml`).
+
+Out of scope (decided): Phase 4 (ECMO and airway equipment; its plan notes,
+including the edge-triggered binding idea, are in the plan doc) and the
+Hemodynamics engine fix.
 
 ### Earlier verified state (pre-circuit work)
 
