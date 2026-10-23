@@ -18,36 +18,60 @@ implement and complete" [docs/plan/plan-circuit-composites.md](docs/plan/plan-ci
   `.skills/` and `CLAUDE.md` that this session did not create. Untouched
   this session; ask before committing there.
 
-### State (2026-10-23)
+### State (2026-10-23, after release)
 
-- **Remote:** `origin` = private GitHub repo (created 2026-10-23).
-- **`eagmon` (Eran Agmon) has a pending invitation with write access.** He
-  must accept it.
-- **`main` @ `772fa2a`** (pushed):
-  - `afac8be`, the workspace bootstrap;
-  - `772fa2a` `ci:`, which makes `publish-dashboard`/`publish-reports`
-    `workflow_dispatch`-only until Pages is set up for the private repo. That
-    is a hand edit to template-generated files: the freshness check still
-    passes, and re-scaffolding restores the push trigger.
-- **PR #1** `feat/circuit-cardiovascular` -> `main`: commit `a3b11e1`, Phase 1
-  plus the 0.2.0 bump.
-  - Local suite: 61 passed, 1 skipped (~85 s); workspace lint OK.
-  - The adversarial review is done: no blockers, all 10 findings fixed and
-    recorded in `.build-progress.md` and the plan's implementation notes.
-- **CI is red, as expected** (user accepted, 2026-10-23). Every `workspace-ci`
-  gate passes (local paths, uv.lock, lint, workflow freshness) except
-  `Run workspace tests`. On the runners: 28 failed, all `PulseNotFoundError`
-  (no Pulse build); 33 passed (the tests that need no engine); 1 skipped. Only
-  `workspace-ci` ran on the pushes, which confirms the Pages workflows are
-  manual-only.
-- **In flight:** a background Plan agent is scoping "build Pulse in CI" (user
-  asked for it to run concurrently). When it returns, write the plan to
-  `docs/plan/plan-ci-pulse-build.md`; it's for later. If the result is lost,
-  re-scope it. Inputs: pinned engine commit `5e29e5b13`, the configure
-  command in `.build-progress.md`, caching keyed on engine commit + Python,
-  and the template's `workspace-ci.yml` provenance check.
-- **After the user merges PR #1:** tag `v0.2.0` on the merge commit, then
-  create a GitHub Release (BOJ 2). Merging is the user's call.
+- **Released v0.2.0.**
+  - PR #1 merged as `edf9745`, with merge permission granted by the user on
+    2026-10-23.
+  - Annotated tag `v0.2.0` on `edf9745`, plus a GitHub Release.
+  - The merged `main` was re-verified locally before tagging: 61 passed,
+    1 skipped; workspace lint OK.
+- **PR #2 merged as `8d7ed88`:** [docs/plan/plan-ci-pulse-build.md](docs/plan/plan-ci-pulse-build.md),
+  the scoped plan for building Pulse in CI. It's for later, and has two
+  decisions open for the user: tightening the protobuf pin, and deleting
+  `workspace-ci.yml`.
+- **v0.2.1 released (`55e9762`, PR #3):** `requires-python` is now `>=3.11`.
+  The v0.2.0 image build failed because `bigraph-viz>=2.0.3`, added by the
+  scaffold, needs Python >= 3.11, so `uv sync`/`uv lock` could not resolve.
+  Regression test: `tests/test_packaging.py` runs `uv lock` on a copy of the
+  project; verified to fail with `>=3.10`. Local suite: 62 passed, 1 skipped.
+- **Branches:** only `main`; merged branches are deleted locally and on the
+  remote.
+- **Remote:** `origin` = private GitHub repo. `eagmon` has a pending invitation
+  with write access.
+- **CI is red, as accepted.**
+  - `workspace-ci`: every gate passes except the tests (28 fail with
+    `PulseNotFoundError`, 33 pass).
+  - The Pages workflows run on manual trigger only (`772fa2a`).
+  - Tags trigger the template `build-and-push.yml`. It builds a Python 3.13
+    workbench image with **no Pulse**, which can't run Pulse composites (see the
+    CI plan).
+    - v0.2.0: failed at dependency resolution (fixed in v0.2.1).
+    - v0.2.1: was being watched at the time of writing. Check with
+      `gh run list --workflow build-and-push.yml`.
+
+### Phase 2 in progress (2026-10-23): branch `feat/circuit-respiratory`, uncommitted
+
+- **Built.** `circuits/respiratory.py` (modules `respiratory` and
+  `mechanical_ventilator`, both on both engines); the ventilation-mechanics
+  start-up in `PulseCircuitProcess` (`_initialize_engine` with the data root,
+  then `_settle`); `ActionBinding.check_transition`; the generators
+  `pulse_respiratory` and `pulse_mechanical_ventilation`; the shared
+  `_setpoints` helper; `tests/test_respiratory.py`; version 0.3.0.
+- **Tests.** Suite: 93 passed, 1 skipped (~100 s); lint OK. Mutation checks:
+  the disconnect test fails on a bare pressure-control Off action; the settle
+  test fails without `_settle`.
+- **Docs updated:** README (respiratory example verified), CLAUDE.md, the
+  plan's Phase 2 notes plus methodology follow-ups plus the CDM-types verdict,
+  `.build-progress.md` (P6/P7, including the corrected disconnect finding).- **Adversarial review done (2026-10-23):** no blockers, nine findings, all fixed
+  (see the plan's Phase 2 notes). It also turned up a Pulse behavior: AssistedControl
+  above the spontaneous rate can auto-trigger at about 50 bpm. Next: commit, PR, merge,
+  tag v0.3.0, release.
+
+- **Research reports received** (summarized in the plan doc):
+  - Methodology review: follow-ups listed in the plan.
+  - CDM types: recommend not registering them. Optionally annotate ports with
+    `float[unit]` later; that claim is not re-verified.
 
 ### Phase 1 design (as built; details in `CLAUDE.md` Architecture)
 
@@ -109,13 +133,10 @@ implement and complete" [docs/plan/plan-circuit-composites.md](docs/plan/plan-ci
 
 ### Next
 
-1. Write the CI plan (`docs/plan/plan-ci-pulse-build.md`) when the agent returns.
-2. Once the user merges PR #1: tag `v0.2.0` and create the GitHub Release.
-3. Phase 2 (respiratory + ventilator): first probe in a subprocess that
-   VentilationMechanics advances cleanly; reference
-   `HowTo_VentilationMechanics.py`. Then Phase 3 thermal, Phase 4 ECMO and
-   equipment, Phase 5 the whole-body composite.
-4. Earlier backlog, still open:
+1. Finish Phase 2 (review, PR, merge, v0.3.0), then Phase 3 thermal, Phase 4
+   ECMO and equipment, and Phase 5 the whole-body composite. Follow-ups are in
+   the plan.
+2. Earlier backlog, still open:
    - `CONTRIBUTING.md` and `.github/workflows/release.yml`.
    - Phase 5 investigation (`vwb scaffold-investigation --name pulse --studies
      viva_pulse.composites.hemorrhage.pulse_hemorrhage,viva_pulse.composites.hemorrhage.pulse_resuscitation`;
@@ -148,8 +169,21 @@ implement and complete" [docs/plan/plan-circuit-composites.md](docs/plan/plan-ci
   wires (bug 2 above).
 - viva-superpowers `workspace_catalog.add` reads workspace.yaml `package`, but
   the template writes `package_path`.
+- viva-template's in-place scaffold adds `bigraph-viz>=2.0.3` (needs Python
+  >= 3.11) without checking the host project's `requires-python`. That made
+  viva-pulse unresolvable until v0.2.1.
+- process-bigraph accumulates time as floats, so `interval=0.02` with
+  `run(2.0)` drops the final update (rows end at t=1.98).
 - Pulse (Kitware):
   - the Hemodynamics engine has a null ECG dereference;
   - `PulseEngine.py` silently falls back to WholeBody for Hemodynamics;
   - `process_action(s)` discards the engine's success flag;
   - `set_event_handler` calls an unbound `keep_event_changes`.
+  - Python/C++ validity mismatches: Python `SEIntubation.is_valid()` rejects
+    type Off (so no extubation from Python); Python
+    `SEMechanicalVentilatorPressureControl.is_valid()` rejects a bare
+    `connection=Off`. C++ accepts both.
+  - The data root for `initialize_engine` comes from `SEPatientConfiguration`
+    (default `./`), not from the `PulseEngine` constructor, so the
+    VentilationMechanics HowTo only works from `install/bin`. From anywhere
+    else it segfaults in `InitializeSubstances`.

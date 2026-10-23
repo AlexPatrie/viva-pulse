@@ -60,7 +60,7 @@ New package `viva_pulse/circuits/`:
   - `Request(port, category, name, unit, compartment=None)` maps to `pulse.cdm.engine.SEDataRequest.create_*_request`.
   - `ActionBinding(ports: dict[str, float], build(values, params) -> SEAction, validate)` is a setpoint group that becomes one action. The **whole group** is resent on any change (`Copy` replaces the full modifier set, `SEPatientActionCollection.cpp:316`). CV modifications always call `set_incremental(True)`.
   - `CircuitModule(name, model_types, outputs, bindings, params)`.
-- Registry `MODULES` holds `vitals`, `hemorrhage`, `infusion` (moved from `processes.py`, which keeps re-exporting `VITALS` / `HEMORRHAGE_COMPARTMENTS`), and `cardiovascular`. Later modules: `respiratory_mechanics`, `mechanical_ventilator`, `thermal`, `ecmo`, `bag_valve_mask`, `supplemental_oxygen`, `anesthesia_machine`, `inhaler`.
+- Registry `MODULES` holds `vitals`, `hemorrhage`, `infusion` (moved from `processes.py`, which keeps re-exporting `VITALS` / `HEMORRHAGE_COMPARTMENTS`), and `cardiovascular`. Later modules: `respiratory_mechanics` (built as `respiratory`, see Phase 2 notes), `mechanical_ventilator`, `thermal`, `ecmo`, `bag_valve_mask`, `supplemental_oxygen`, `anesthesia_machine`, `inhaler`.
 - `model_types` gates validity:
   - `infusion` is `{whole_body}` only, because DrugModel is not processed on Hemodynamics.
   - The `vitals` module, which includes SpO2 and RR, is `{whole_body}` only.
@@ -167,3 +167,61 @@ Probe scripts live in the scratchpad and run with `uv run --no-sync`. **Every He
 - **Validation happens up front.** `PulseCircuitProcess` validates every changed setpoint group before sending any action. `pulse_cardiovascular` also runs the module's validators when it builds the document.
 - **The irreversible latch is unobservable from outside.** Pulse refuses to advance once irreversible (`Controller.cpp:790`), so the process's own latch can't be seen in the outputs; the test pins the output contract only. `PulseProcess` has the same property.
 - **Adversarial review (2026-10-23).** It found no blockers, and all ten findings were addressed. The new tests were each shown to fail on a deliberately broken copy of the code.
+
+## Phase 2 implementation notes (2026-10-23): respiratory + mechanical ventilator
+
+- **Modules.** `respiratory` (24 mechanics scalars, 8 gas compartments) and `mechanical_ventilator` (18 monitor values, one pressure-control setpoint group). Both run on **both** engines.
+- **Generators.** `pulse_respiratory` and `pulse_mechanical_ventilation`. Both default to `ventilation_mechanics`, the isolated airway.
+- **Ventilation-mechanics engine.**
+  - It starts from a patient file, with the data root set on `SEPatientConfiguration`; without that it segfaults.
+  - It then **settles** before t=0, because it does no stabilization and `PeakInspiratoryPressure` is NaN until the first breath.
+  - The plan's open item "probe that ventilation-mechanics advances cleanly" is done (P6/P7 in `.build-progress.md`).
+- **Two Pulse Python/C++ mismatches, handled explicitly.**
+  - `SEIntubation.is_valid()` rejects Off, so **extubation is impossible from Python**. Our 1 -> 0 change raises, through a new `ActionBinding.check_transition`.
+  - `SEMechanicalVentilatorPressureControl.is_valid()` rejects a bare `connection=Off`, so we disconnect with `SEMechanicalVentilatorConfiguration{Off}`.
+- **Renamed port.** The gas-compartment pressure port is `absolute_pressure_cmH2O`; Pulse's ambient is 1033.2 cmH2O.
+- **Measured contrast (test anchor).** Lung compliance x0.5 cuts tidal volume 471 -> 270 mL isolated (rate unchanged), but 510 -> 388 mL coupled (chemoreflex raises the rate 12 -> 15). These figures are from the generators (StandardMale patient file, settled, 60 s). The P7 probe figures in `.build-progress.md` differ because that probe used a different patient set-up and timing.
+- **Deviations from the Phase 2 row of the plan table.**
+  - The module is named `respiratory`, not `respiratory_mechanics`: it covers the gas compartments and intubation as well as the mechanics.
+  - Its inputs are the `SERespiratoryMechanicsModification` multipliers (incremental, full group), not `SERespiratoryMechanicsConfiguration`. That matches Phase 1's cardiovascular multipliers. Checked at source: `RespiratoryModel.cpp:4619` applies the multipliers from baseline every step, and a non-incremental send restabilizes (`Controller.cpp:1073`) with a null `m_Stabilizer` on ventilation_mechanics.
+  - Only pressure control is built, in AC and CMV modes. Volume control and CPAP are follow-ups (below).
+- **Start files.** A non-default `state_file` on ventilation_mechanics, or `patient_file` on whole_body, raises. Before this it was silently ignored.
+- **Row 0 is not ventilated.** Setpoints apply from the first update (the Phase 1 contract), so `pulse_mechanical_ventilation` settles with spontaneous breathing. Its ventilator monitor reads 0 until the first ventilated breath completes.
+- **AssistedControl auto-triggering (Pulse behavior).** At a set rate of 16 bpm (spontaneous 12), AC mode can lock into about 48-52 bpm with intrinsic PEEP 12-14 cmH2O. Which engine locks depends on the breath phase at connect. Driving Pulse directly with no wrapper reproduces it (whole_body: RR 51.7, PEEP 13.8). CMV honours all settings on both engines, so the settings test uses CMV.
+- **Adversarial review (2026-10-23).** It found no blockers and nine findings, all addressed:
+  - start-file check;
+  - recorded deviations;
+  - the settings test now uses non-default PIP, PEEP, rate, inspiratory period and FiO2, and is shown to fail when each is hard-coded;
+  - new tests: reconnect, settle exhaustion, missing patient file, and start file ignored by the engine;
+  - documented: `max_settle_s` can't be 0, and row 0 is pre-ventilation;
+  - figures reconciled; runtime updated.
+
+  The two research sections below are kept here, with their verification status, as planning input.
+
+## Follow-ups from the Pulse methodology review (2026-10-23)
+
+These come from a review of `pulse.kitware.com/_system_methodology.html` against the pinned `engine/docs/Methodology`. "Verified" means I checked it at source; the rest must be checked when implemented.
+
+**Phase 2 extensions (respiratory)**
+- **Validation scenarios.** Use Kitware's ventilation-mechanics bench scenarios (`engine/data/human/adult/scenarios/miscellaneous/ventilation_mechanics/*.json`, run on HumanAdultVentilationMechanics) as study and validation anchors. Assert against Pulse's own outputs; the bench values are context, with TV errors of 11-36% in PC/CPAP modes.
+- **Whole-body ventilator studies.** Use the `Ventilated@0s.json` patient, which matches the validation tables. The PC-CMV validation runs tune the inspiratory pressure to a target TV, so reproducing them needs a TV-targeting controller Step (the `MapFluidController` pattern) or a volume-control mode.
+- **More respiratory actions.** Exacerbation actions (ARDS, COPD, pneumonia, impaired alveolar exchange, pulmonary shunt), airway obstruction, bronchoconstriction, tension pneumothorax (plus needle decompression and occlusive dressing), dyspnea and supplemental O2. Also VC-AC/VC-CMV/CPAP modes; only PC/VC-CMV, PC/VC-AC and CPAP are validated.
+- **One-shot commands.** Ventilator hold, a BVM squeeze, and conscious-respiration sequences need an **edge-triggered** binding, not the level-setpoint pattern. Design it before the BVM work in Phase 4.
+- **Positive-pressure ventilation modifiers.** These are documented in the module docstring: airway resistance x15 (**verified**, `RespiratoryMethodology.md` "diseases" table) plus a compliance change.
+
+**Phase 3/4**
+- **Thermal.** Core temperature is about 37.0 °C; Pulse defines hypothermia below 35 °C and hyperthermia above 38.8 °C. The thermal circuit couples to the cardiovascular one through skin blood flow. Runs are hour-scale, so tests will be slow.
+- **ECMO.** Its blood loop joins the cardiovascular solve, so it must share the cardiovascular Process. Always set the sweep gas flow explicitly, because the engine default is unrealistic. Validate the mode parameters before sending them; mixing diffusion and rate parameters causes an engine Fatal.
+
+**Retroactive (cardiovascular)**
+- **Resting-state test.** Check against the published bands (MAP 70-105, HR 60-100, mean CVP 2-6 mmHg, stroke volume 55-93 mL), averaged over whole beats.
+- **Documentation.** Compartments are hierarchical (`heart` contains the chambers), so their values don't add up. HR changes take effect at the next beat. MAP collapse does not force `irreversible_state`.
+
+## CDM-mapped bigraph types: scoped, recommend not now (2026-10-23)
+
+A research agent reviewed `pulse.kitware.com/_c_d_m_tables.html` and bigraph-schema 1.8.2. Its claims come from its own probes, which were not re-run by me; re-verify before acting on them. It concluded:
+
+- **Don't register CDM-mapped types.** The CDM tables give dimension classes, not units. Our units are fixed in one place, each module's `Request` table.
+- **bigraph-schema's built-in `range` and `enum` are wrong for our setpoints.** `range` clamps silently (a severity of 2.0 would become 1.0 with no error), and `enum` isn't enforced at run time. Our explicit validators are stricter.
+- **The workbench never reads port units.**
+- **Optional small step for later:** annotate output ports with the built-in `float[<Pulse unit>]`. Built-in pint conversion at wire boundaries was probed on the real engine, with bit-identical rows and a correct kPa conversion. Do it when a non-Pulse model is wired to Pulse stores, or when the workbench starts reading units.

@@ -13,7 +13,7 @@ Session state (active work, next steps, user instructions such as "do not commit
 The venv is `.venv` (uv-created, CPython 3.12.12, the same Python `PyPulse` was compiled against).
 
 ```bash
-uv run --no-sync pytest -q                                              # full suite, ~80 s, real engine
+uv run --no-sync pytest -q                                              # full suite, ~100 s, real engine
 uv run --no-sync pytest -q tests/test_processes.py::test_zero_severity_does_not_bleed   # one test
 ```
 
@@ -36,7 +36,12 @@ The per-circuit composite plan (approved 2026-10-22) is [docs/plan/plan-circuit-
     - Output ports nest per module, e.g. `cardiovascular/central/aorta/pressure_mmHg`.
     - Setpoints live under the single input port `setpoints/<module>/...`. Each port's schema `_default` is its baseline, so an omitted setpoint is never 0.0.
     - Input and output top-level names must stay disjoint. process-bigraph projects `initial_state()` through input wires too, and a shared name copied readings into `interventions/` (`test_stores_hold_only_their_own_ports` guards this).
-    - Only `model_type: whole_body` is supported (`SUPPORTED_MODEL_TYPES`).
+    - `SUPPORTED_MODEL_TYPES`:
+      - `whole_body` loads `state_file` (`_load_engine`).
+      - `ventilation_mechanics` (airway only, no blood) starts from `patient_file` (`_initialize_engine`). It must set `SEPatientConfiguration.set_data_root_dir(<install>/bin/)`: Pulse takes the data root from the patient config, which defaults to `./`, and without it substance loading segfaults. It then runs `_settle()`: that engine does no stabilization, so it advances in 1 s steps until every request is non-NaN (at most `max_settle_s`; bigraph-schema turns an explicit 0.0 into the default, so settling can't be switched off).
+      - A non-default value for the start file the engine doesn't use (`state_file` on ventilation_mechanics, `patient_file` on whole_body) raises in `__init__`.
+    - `ActionBinding.check_transition(previous, values)` rejects changes Pulse can't make. Extubation (intubated 1 -> 0) is one: Pulse's Python `SEIntubation.is_valid()` rejects type Off, so `PulseEngine` would silently drop it.
+    - Hemodynamics (cardiovascular-only) segfaults and is not supported.
 - `viva_pulse/circuits/`: a declarative registry; modules compute nothing.
   - `base.py` defines `Request` (one Pulse data request at a port path), `ActionBinding` (a group of setpoints resent whole as one action) and `CircuitModule`.
   - `cardiovascular.py` covers the cardiovascular circuit plus its renal and tissue branches, which share one Pulse solve. It has 146 outputs:
@@ -44,10 +49,13 @@ The per-circuit composite plan (approved 2026-10-22) is [docs/plan/plan-circuit-
     - Pressure/Volume/Inflow/Outflow for 32 regions under `central/`, `renal/` and `peripheral/`.
   - Its setpoints are the 10 `SECardiovascularMechanicsModifiers` multipliers, always sent with `incremental=True` (non-incremental reruns stabilization and resets baselines), plus hemorrhage.
   - Pulse spells compartment flows `Inflow`/`Outflow`; `InFlow` returns NaN.
+  - `respiratory.py` has two modules, both on both engines:
+    - `respiratory`: 24 `SERespiratorySystem` scalars under `mechanics/`, plus gas compartments under `lungs/` and `pleura/`. Their `absolute_pressure_cmH2O` is absolute (ambient 1033.2). Setpoints: 10 `SERespiratoryMechanicsModifiers` multipliers (incremental, full group) and `intubated`.
+    - `mechanical_ventilator`: 18 ventilator monitor values, which read 0 while disconnected. Setpoints: one pressure-control group. `connected=0` sends `SEMechanicalVentilatorConfiguration{connection: Off}`, because Pulse's Python drops a bare pressure-control action with Off (its `is_valid` requires the pressure settings, though C++ accepts it).
   - A request Pulse can't serve returns NaN, so the process fails the load instead of emitting it.
 - `viva_pulse/core.py`: `build_core()` registers the processes explicitly on an `allocate_core()` core, because discovery can miss editable installs. Tests and any `studies/*/sims/run.py` should use it.
 - `viva_pulse/composites/hemorrhage.py`: `@composite_generator`s `pulse_hemorrhage` and `pulse_resuscitation` (`fidelity="real-bridge"`, `core_extensions=[register_processes]`). Store layout: `interventions/` (setpoints), `vitals/` (engine outputs), and a `RAMEmitter` step at `emitter`. `PulseProcess` runs at `interval: 1.0`, so a run of `N` simulated seconds emits `N + 1` rows, the first at t=0.
-- `viva_pulse/composites/circuits.py`: `circuit_node()` / `circuit_emitter()` wiring helpers and the `pulse_cardiovascular` generator. Store layout: `interventions/<module>/`, `circuits/<module>/`, `circuits/irreversible_state`, and `emitter`, which emits both subtrees.
+- `viva_pulse/composites/circuits.py`: `circuit_node()` / `circuit_emitter()` wiring helpers, `_setpoints()` (module baselines plus overrides, validated when the document is built), and the generators `pulse_cardiovascular`, `pulse_respiratory` and `pulse_mechanical_ventilation`. The two respiratory generators default to `ventilation_mechanics`. Store layout: `interventions/<module>/`, `circuits/<module>/`, `circuits/irreversible_state`, and `emitter`, which emits both subtrees.
 
 ## Tests
 

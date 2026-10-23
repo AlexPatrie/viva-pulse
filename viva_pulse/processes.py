@@ -51,6 +51,35 @@ def _load_engine(install_dir: str, model_type: str, state_file: str, requests: l
     return engine
 
 
+def _initialize_engine(install_dir: str, model_type: str, patient_file: str, requests: list):
+    """Initialize a new engine of ``model_type`` from ``<install>/bin/patients/<patient_file>``.
+
+    For engines that cannot load a state file (VentilationMechanics), the data
+    root is set on the patient configuration explicitly. Pulse takes it from
+    there, not from the engine constructor, and its default ``./`` leaves the
+    substances unloaded, which segfaults in ``InitializeSubstances``.
+    """
+    bin_dir = ensure_pulse_importable(install_dir)
+
+    from pulse.cdm.engine import SEDataRequestManager
+    from pulse.cdm.patient import SEPatientConfiguration
+    from pulse.engine.PulseEngine import PulseEngine, eModelType
+
+    patient_path = bin_dir / "patients" / patient_file
+    if not patient_path.is_file():
+        raise FileNotFoundError(f"Pulse patient file not found: {patient_path}")
+
+    configuration = SEPatientConfiguration()
+    configuration.set_data_root_dir(f"{bin_dir}/")
+    configuration.set_patient_file(str(patient_path))
+    engine = PulseEngine(getattr(eModelType, model_type), f"{bin_dir}/")
+    engine.log_to_console(False)
+    if not engine.initialize_engine(configuration, SEDataRequestManager(requests)):
+        raise RuntimeError(f"Pulse failed to initialize {model_type} from {patient_path}")
+    engine.advance_time_s(0.0)
+    return engine
+
+
 class PulseProcess(Process):
     """Time-stepped bridge to the real Pulse whole-body adult engine.
 
@@ -184,11 +213,15 @@ class PulseProcess(Process):
         return {name: current[name] - previous[name] for name in VITALS}
 
 
-# Engines PulseCircuitProcess can load today, mapped to eModelType member names.
-# HumanAdultHemodynamics segfaults on its first advance (no ECG model) and is not
-# selectable from Python; VentilationMechanics arrives with the respiratory
-# module. See docs/plan/plan-circuit-composites.md.
-SUPPORTED_MODEL_TYPES = {"whole_body": "HumanAdultWholeBody"}
+# Engines PulseCircuitProcess can load, mapped to eModelType member names. WholeBody
+# loads a stabilized state file; VentilationMechanics (no state files) initializes
+# from a patient file. HumanAdultHemodynamics segfaults on its first advance (no
+# ECG model) and is not selectable from Python; see docs/plan/plan-circuit-composites.md.
+SUPPORTED_MODEL_TYPES = {
+    "whole_body": "HumanAdultWholeBody",
+    "ventilation_mechanics": "HumanAdultVentilationMechanics",
+}
+_INITIALIZED_FROM_PATIENT = {"ventilation_mechanics"}
 
 
 def _circuit_config_schema() -> dict[str, Any]:
@@ -196,6 +229,8 @@ def _circuit_config_schema() -> dict[str, Any]:
         "model_type": {"_type": "string", "_default": "whole_body"},
         "modules": {"_type": "list[string]", "_default": []},
         "state_file": {"_type": "string", "_default": "StandardMale@0s.json"},
+        "patient_file": {"_type": "string", "_default": "StandardMale.json"},
+        "max_settle_s": {"_type": "float", "_default": 30.0},
         "install_dir": {"_type": "string", "_default": ""},
     }
     for module in MODULES.values():
@@ -242,6 +277,13 @@ class PulseCircuitProcess(Process):
     modules share one Pulse request. A request that Pulse cannot serve (it
     returns NaN) raises at load or at the update where it appears, naming the
     request. All changed setpoint groups are validated before any action is sent.
+
+    WholeBody loads a stabilized ``state_file``. VentilationMechanics has no
+    state files, so it initializes from ``patient_file`` and then settles (see
+    ``_settle``) before t = 0. Setting the file the chosen engine does not use
+    to anything but its default raises, instead of being silently ignored.
+    Setpoints, including connecting a ventilator, apply from the first update,
+    so row 0 always shows the engine as loaded or settled.
     """
 
     config_schema = _circuit_config_schema()
@@ -253,6 +295,11 @@ class PulseCircuitProcess(Process):
             known = "known" if model_type in ENGINE_MODEL_TYPES else "unknown"
             raise ValueError(f"model_type {model_type!r} ({known}) is not supported; "
                              f"supported: {sorted(SUPPORTED_MODEL_TYPES)}")
+        used = "patient_file" if model_type in _INITIALIZED_FROM_PATIENT else "state_file"
+        for key in ("state_file", "patient_file"):
+            if key != used and self.config[key] != self.config_schema[key]["_default"]:
+                raise ValueError(f"{key} {self.config[key]!r} is not used by model_type {model_type!r}, "
+                                 f"which starts from {used}")
         names = list(self.config["modules"])
         if not names:
             raise ValueError(f"modules must name at least one of {sorted(MODULES)}")
@@ -310,14 +357,39 @@ class PulseCircuitProcess(Process):
         if self._engine is not None:
             return self._engine
         ensure_pulse_importable(self.config["install_dir"])
-        engine = _load_engine(self.config["install_dir"],
-                              SUPPORTED_MODEL_TYPES[self.config["model_type"]],
-                              self.config["state_file"],
-                              [request.to_pulse() for request in self._requests])
+        model_type = self.config["model_type"]
+        requests = [request.to_pulse() for request in self._requests]
+        if model_type in _INITIALIZED_FROM_PATIENT:
+            engine = _initialize_engine(self.config["install_dir"], SUPPORTED_MODEL_TYPES[model_type],
+                                        self.config["patient_file"], requests)
+            self._settle(engine)
+        else:
+            engine = _load_engine(self.config["install_dir"], SUPPORTED_MODEL_TYPES[model_type],
+                                  self.config["state_file"], requests)
         values = self._pull(engine)
         self._engine = engine
         self._previous = values
         return engine
+
+    def _settle(self, engine) -> None:
+        """Advance a patient-initialized engine until every request has a value.
+
+        These engines do no stabilization (``Stabilize`` is a no-op), so
+        per-breath values such as PeakInspiratoryPressure are NaN until the
+        first breath completes. This settling plays the role that Pulse's
+        stabilization plays for WholeBody state files. It runs before t = 0, in
+        1 s steps, for at most ``max_settle_s``. A request still NaN after that
+        is unserved, and ``_pull`` reports it. bigraph-schema replaces an
+        explicit ``max_settle_s`` of 0.0 with the default, so settling cannot
+        be switched off.
+        """
+        settled = 0.0
+        while settled < self.config["max_settle_s"]:
+            if not any(math.isnan(float(v)) for v in engine.pull_data()[1:]):
+                return
+            if not engine.advance_time_s(1.0):
+                raise RuntimeError("Pulse reached an irreversible state while settling")
+            settled += 1.0
 
     def _pull(self, engine) -> list[float]:
         """Current readings in request order; NaN (a request Pulse cannot serve)
@@ -344,9 +416,12 @@ class PulseCircuitProcess(Process):
         for module in self._modules:
             for i, binding in enumerate(module.bindings):
                 values = {port: float(state["setpoints"][module.name][port]) for port in binding.ports}
-                if values != self._applied[(module.name, i)]:
+                previous = self._applied[(module.name, i)]
+                if values != previous:
                     if binding.validate:
                         binding.validate(values, self.config)
+                    if binding.check_transition:
+                        binding.check_transition(previous, values)
                     changed.append(((module.name, i), binding, values))
         for key, binding, values in changed:
             engine.process_action(binding.build(values, self.config))
