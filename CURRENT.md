@@ -18,33 +18,36 @@ implement and complete" [docs/plan/plan-circuit-composites.md](docs/plan/plan-ci
   `.skills/` and `CLAUDE.md` that this session did not create. Untouched
   this session; ask before committing there.
 
-### State at checkpoint (2026-10-22, late)
+### State (2026-10-23)
 
-- Branch `feat/circuit-cardiovascular` (off `main` @ `afac8be`). **Phase 1 is
-  implemented, uncommitted:**
-  - Modified: `.build-progress.md`, `CLAUDE.md`, `CURRENT.md`, `README.md`,
-    `docs/plan/plan-circuit-composites.md`, `viva_pulse/{__init__,core,processes}.py`,
-    `viva_pulse/composites/__init__.py`.
-  - New: `viva_pulse/circuits/{__init__,base,cardiovascular}.py`,
-    `viva_pulse/composites/circuits.py`, `tests/test_circuits.py`.
-- `uv run --no-sync pytest -q`: **61 passed, 1 skipped (~85 s)**, and
-  workspace lint OK. Version bumped to 0.2.0. The skip is the template's
-  `test_composite_state_artifacts`.
-- **The `/adversarial` review is DONE (2026-10-23)**: no blockers; all 10
-  findings fixed. They are recorded in `.build-progress.md` and the plan's
-  "Phase 1 implementation notes".
-- **Release decision (user, 2026-10-23):**
-  - Create a **private GitHub repo** (planned name `AlexPatrie/viva-pulse`,
-    which is free).
-  - Push `main` plus the feature branch, open a PR, then tag v0.2.0 and make a
-    GitHub Release after the merge.
-  - **Add `eagmon` (Eran Agmon) with write access** (user, 2026-10-23).
-- **Blocker before pushing:** the template's CI can't pass.
-  - `workspace-ci.yml` runs `pytest tests/` on push and PR, but there is no
-    Pulse build on the runners.
-  - `publish-dashboard.yml` and `publish-reports.yml` publish to Pages on every
-    push to `main`.
-  - How to handle this is with the user.
+- **Remote:** `origin` = private GitHub repo (created 2026-10-23).
+- **`eagmon` (Eran Agmon) has a pending invitation with write access.** He
+  must accept it.
+- **`main` @ `772fa2a`** (pushed):
+  - `afac8be`, the workspace bootstrap;
+  - `772fa2a` `ci:`, which makes `publish-dashboard`/`publish-reports`
+    `workflow_dispatch`-only until Pages is set up for the private repo. That
+    is a hand edit to template-generated files: the freshness check still
+    passes, and re-scaffolding restores the push trigger.
+- **PR #1** `feat/circuit-cardiovascular` -> `main`: commit `a3b11e1`, Phase 1
+  plus the 0.2.0 bump.
+  - Local suite: 61 passed, 1 skipped (~85 s); workspace lint OK.
+  - The adversarial review is done: no blockers, all 10 findings fixed and
+    recorded in `.build-progress.md` and the plan's implementation notes.
+- **CI is red, as expected** (user accepted, 2026-10-23). Every `workspace-ci`
+  gate passes (local paths, uv.lock, lint, workflow freshness) except
+  `Run workspace tests`. On the runners: 28 failed, all `PulseNotFoundError`
+  (no Pulse build); 33 passed (the tests that need no engine); 1 skipped. Only
+  `workspace-ci` ran on the pushes, which confirms the Pages workflows are
+  manual-only.
+- **In flight:** a background Plan agent is scoping "build Pulse in CI" (user
+  asked for it to run concurrently). When it returns, write the plan to
+  `docs/plan/plan-ci-pulse-build.md`; it's for later. If the result is lost,
+  re-scope it. Inputs: pinned engine commit `5e29e5b13`, the configure
+  command in `.build-progress.md`, caching keyed on engine commit + Python,
+  and the template's `workspace-ci.yml` provenance check.
+- **After the user merges PR #1:** tag `v0.2.0` on the merge commit, then
+  create a GitHub Release (BOJ 2). Merging is the user's call.
 
 ### Phase 1 design (as built; details in `CLAUDE.md` Architecture)
 
@@ -106,10 +109,8 @@ implement and complete" [docs/plan/plan-circuit-composites.md](docs/plan/plan-ci
 
 ### Next
 
-1. Get the `/adversarial` result (or re-run it); fix real gaps; re-run pytest.
-2. Bump the version to 0.2.0 in `pyproject.toml` (BOJ: same unit as the fix
-   and tests). Ask the user to commit Phase 1 on `feat/circuit-cardiovascular`,
-   and how to handle PR, tag and release with no remote configured.
+1. Write the CI plan (`docs/plan/plan-ci-pulse-build.md`) when the agent returns.
+2. Once the user merges PR #1: tag `v0.2.0` and create the GitHub Release.
 3. Phase 2 (respiratory + ventilator): first probe in a subprocess that
    VentilationMechanics advances cleanly; reference
    `HowTo_VentilationMechanics.py`. Then Phase 3 thermal, Phase 4 ECMO and
