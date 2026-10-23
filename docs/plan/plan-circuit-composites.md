@@ -47,7 +47,7 @@ Consequences:
 
 ## Resolved: whole-body first (user, 2026-10-22)
 
-The cardiovascular composite is built on the **WholeBody** engine first. The Hemodynamics C++ fix is an **optional later track**. The smallest first patch is to allocate `m_ElectroCardioGramModel = new pulse::ElectroCardioGramModel(*this);` beside the other "CV looks for data on them" allocations (hemodynamics `Controller.cpp:68-71`); more null dependencies may follow. Because the module doesn't depend on the engine, enabling `engine=hemodynamics` later needs no change to the module.
+The cardiovascular composite is built on the **WholeBody** engine first. The Hemodynamics C++ fix is an **optional later track**, outside this plan's completion criteria (user, 2026-10-23). The smallest first patch is to allocate `m_ElectroCardioGramModel = new pulse::ElectroCardioGramModel(*this);` beside the other "CV looks for data on them" allocations (hemodynamics `Controller.cpp:68-71`); more null dependencies may follow. Because the module doesn't depend on the engine, enabling `engine=hemodynamics` later needs no change to the module.
 
 The implementation approach is confirmed with the user: process-bigraph Process and Step classes wrap the **real Pulse Python bindings** (`PulseEngine`, data requests, actions), are composed into documents, and run through `process_bigraph.Composite`. There is **no Python-native rewrite** of Pulse's physiology or solver.
 
@@ -197,6 +197,48 @@ Probe scripts live in the scratchpad and run with `uv run --no-sync`. **Every He
   - figures reconciled; runtime updated.
 
   The two research sections below are kept here, with their verification status, as planning input.
+
+## Phase 3 implementation notes (2026-10-23): thermal
+
+- **Module.** `thermal`, whole_body only, with 44 outputs:
+  - `energy`: core and skin temperature, sweat rate and total metabolic rate;
+  - `heat_loss`: five loss rates and three transfer coefficients;
+  - `environment`: seven conditions, read back from the engine as `EnvironmentalConditions-<Property>` environment requests;
+  - `compartments`: temperature for 7 thermal compartments, stored heat for 2, heat flow in/out for 8.
+- **Generator.** `pulse_thermal`, with default `n_steps` 1800.
+- **New request categories.** `environment` and `thermal_compartment`, added to `Request.to_pulse`.
+- **Probe P8 (`.build-progress.md`) set the request list.**
+  - Pulse returns stored heat only for `InternalCore`/`InternalSkin`, and NaN for `InternalGround`'s temperature.
+  - `ExternalGround` (the circuit's absolute-zero reference) and `Active` (the applied-temperature node, while off) read 0 K. Their temperatures are not exposed.
+  - `Active` keeps its heat flows, which carry the applied-temperature heat.
+- **Setpoints.**
+  - `environment`: `SEChangeEnvironmentalConditions`, merge type Append (the proto default). Fields the action doesn't carry stay as they are (verified: atmospheric pressure kept).
+  - `thermal_application`: `SEThermalApplication`, which Pulse replaces whole on each action. Heating and cooling are `power x area_fraction` (verified: 500 W at 0.4 equals 200 W at 1.0 exactly). Zero power with the applied temperature off deactivates it (verified in Pulse's serialized active actions).
+  - Environment baselines are `Standard.json`, which all 21 shipped states use (a test checks every state). A state with another environment fails the load (`CircuitModule.check_loaded`), because the group is always sent whole.
+  - Breathed air: Pulse computes respiration heat loss from `RespirationAmbientTemperature` (`EnvironmentModel.cpp:764`), which does not follow `AmbientTemperature`, so it is its own setpoint. Breathing -10 °C air raises respiration loss 8.06 -> 13.34 W.
+  - The applied temperature is a source on the clothing node, set to `applied * fraction + ambient * (1 - fraction)` (`EnvironmentModel.cpp:449-458`).
+- **The state isn't thermally settled.** Unperturbed StandardMale skin goes 32.36 -> 29.95 °C in 30 min, and core 37.03 -> 37.09 °C. Every effect test compares against a parallel unperturbed run.
+- **Measured through the generator** (Δ against the unperturbed run):
+
+  | Intervention | Effect |
+  |---|---|
+  | -10 °C with a 5 m/s wind | skin -3.2 °C at 120 s; core -0.18 °C at 600 s; shivering raises metabolic rate after 900 s |
+  | 200 W heating | skin +0.61 °C at 120 s |
+  | 200 W cooling | skin -0.62 °C at 120 s |
+  | applied 10 °C over the whole skin | skin -2.16 °C at 120 s, with 656 W into `active` |
+  | 40 °C at 0.8 humidity (probe only) | skin +2.0 °C at 300 s; sweat 0.33 -> 2.17 g/min over 30 min |
+
+- **Cost.** Pulse runs at about 35x real time, so 30 simulated minutes take about 52 s. The thermal tests take about 60 s, and the suite about 160 s.
+- **Deviation from the plan table.** Its row lists only the two actions. The module also exposes the read-back environmental conditions, so a setpoint change is visible once applied.
+- **Adversarial review (2026-10-23).** It found no NaN under extreme conditions, and nine findings, all addressed:
+  - setpoint coverage: two new tests check that every environment setpoint reads back, and that every thermal-application field reaches Pulse's serialized active action. The reviewer's seven surviving mutants (clothing, humidity, radiant temperature, applied temperature in K, area fractions, a swapped read-back) now fail;
+  - the breathed-air temperature setpoint;
+  - the load check for non-Standard environments;
+  - the applied-temperature blend described correctly;
+  - the ground-node wording;
+  - docstring numbers and the sweat figure;
+  - a shared `validate_switch`;
+  - a `model_type` parameter on `pulse_thermal`.
 
 ## Follow-ups from the Pulse methodology review (2026-10-23)
 

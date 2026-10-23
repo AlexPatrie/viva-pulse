@@ -10,13 +10,28 @@ implement and complete" [docs/plan/plan-circuit-composites.md](docs/plan/plan-ci
 `agenda.md` is kept out of git via `.git/info/exclude` (user, 2026-10-22).
 
 **Standing user instructions (2026-10-22):**
-- Do NOT commit without asking. The only approved commit so far is the
-  Phase 4.5 bootstrap `afac8be` on `main`.
+- Commits: the user approved the full release flow per phase (branch, PR,
+  merge, tag, GitHub Release) and granted merge permission "when ready and
+  safe" (2026-10-23). Anything outside that flow still needs asking. Never
+  push to `main` directly.
+- Ignore the concurrent gnn session (user, 2026-10-23). The untracked
+  `docs/guide/` in this repo is not this session's: leave it out of commits.
 - Keep README.md current with every user-visible change.
 - Never `uv sync`; always `uv run --no-sync`.
 - `../engine` is a separate repo: on branch `viva-wrapper`, with untracked
   `.skills/` and `CLAUDE.md` that this session did not create. Untouched
   this session; ask before committing there.
+- Keep `agenda.md` up to date (user, 2026-10-23): progress per phase,
+  `last-addressed`, `status`, and the constraints below.
+
+**Decisions (user, 2026-10-23, via `/open-question`):**
+- The Hemodynamics engine fix is out of scope for the agenda; it stays an
+  optional follow-up.
+- Upstream issues are drafted, never filed by Claude, in `upstream-issues/`
+  at the repo root, kept out of git via `.git/info/exclude`.
+- The CI plan is implemented after Phase 5, in its own PR, with both open
+  choices taken: tighten the pin to `protobuf>=7.35,<7.36`, and replace
+  `workspace-ci.yml` with the Pulse-building workflow.
 
 ### State (2026-10-23, after release)
 
@@ -40,17 +55,39 @@ implement and complete" [docs/plan/plan-circuit-composites.md](docs/plan/plan-ci
 - **Remote:** `origin` = private GitHub repo. `eagmon` has a pending invitation
   with write access.
 - **CI is red, as accepted.**
-  - `workspace-ci`: every gate passes except the tests (28 fail with
-    `PulseNotFoundError`, 33 pass).
+  - `workspace-ci`: every gate passes except the tests (as of v0.3.0: 43 fail,
+    all with `PulseNotFoundError`; 50 pass).
   - The Pages workflows run on manual trigger only (`772fa2a`).
   - Tags trigger the template `build-and-push.yml`. It builds a Python 3.13
     workbench image with **no Pulse**, which can't run Pulse composites (see the
     CI plan).
     - v0.2.0: failed at dependency resolution (fixed in v0.2.1).
-    - v0.2.1: was being watched at the time of writing. Check with
+    - v0.2.1: succeeded.
+    - v0.3.0: succeeded (run 39903606704). Check later builds with
       `gh run list --workflow build-and-push.yml`.
 
-### Phase 2 in progress (2026-10-23): branch `feat/circuit-respiratory`, uncommitted
+### Phase 3 (2026-10-23): thermal, branch `feat/circuit-thermal`, v0.4.0, in the release flow
+
+- **Built.**
+  - `circuits/thermal.py`: the `thermal` module, whole_body only, 44 outputs.
+    Setpoint groups: `environment` (6 setpoints, including the breathed-air
+    temperature) and `thermal_application` (7).
+  - `Request` gained the `environment` and `thermal_compartment` categories.
+  - `CircuitModule.check_loaded`: a state with a non-Standard environment fails the load.
+  - Shared `validate_switch` in `base.py`.
+  - `pulse_thermal` generator (with `model_type`).
+  - `tests/test_thermal.py` (31 tests).
+  - `docs/images/circuit-environment.png`.
+  - Version 0.4.0.
+- **Verified.**
+  - Thermal tests: 31 passed (66 s).
+  - Full suite: 124 passed, 1 skipped (165 s).
+  - Lint OK.
+  - Mutants M1-M9 plus the reviewer's R1-R9: all caught.
+- **Adversarial review done.** Nine findings, all fixed; the plan's Phase 3 notes list them.
+- **Next.** Commit (with this `CURRENT.md` and the plan's Hemodynamics edit), PR, merge, tag `v0.4.0`, Release, and check the image build.
+
+### Phase 2 released (2026-10-23): v0.3.0
 
 - **Built.** `circuits/respiratory.py` (modules `respiratory` and
   `mechanical_ventilator`, both on both engines); the ventilation-mechanics
@@ -63,11 +100,13 @@ implement and complete" [docs/plan/plan-circuit-composites.md](docs/plan/plan-ci
   test fails without `_settle`.
 - **Docs updated:** README (respiratory example verified), CLAUDE.md, the
   plan's Phase 2 notes plus methodology follow-ups plus the CDM-types verdict,
-  `.build-progress.md` (P6/P7, including the corrected disconnect finding).- **Adversarial review done (2026-10-23):** no blockers, nine findings, all fixed
+  `.build-progress.md` (P6/P7, including the corrected disconnect finding).
+- **Adversarial review done (2026-10-23):** no blockers, nine findings, all fixed
   (see the plan's Phase 2 notes). It also turned up a Pulse behavior: AssistedControl
-  above the spontaneous rate can auto-trigger at about 50 bpm. Next: commit, PR, merge,
-  tag v0.3.0, release.
-
+  above the spontaneous rate can auto-trigger at about 50 bpm.
+- **Released.** PR #4 (commit `f56d6ae`, merge `d4608ea`), annotated tag `v0.3.0`, GitHub
+  Release. The merged `main` was re-verified locally: 93 passed, 1 skipped; lint OK. PR CI:
+  every gate passes except the tests (43 fail, all `PulseNotFoundError`).
 - **Research reports received** (summarized in the plan doc):
   - Methodology review: follow-ups listed in the plan.
   - CDM types: recommend not registering them. Optionally annotate ports with
@@ -76,7 +115,7 @@ implement and complete" [docs/plan/plan-circuit-composites.md](docs/plan/plan-ci
 ### Phase 1 design (as built; details in `CLAUDE.md` Architecture)
 
 - `PulseCircuitProcess` (`viva_pulse/processes.py`):
-  - one real WholeBody engine (`SUPPORTED_MODEL_TYPES = {"whole_body"}`);
+  - one real engine (`SUPPORTED_MODEL_TYPES`: `whole_body`, plus `ventilation_mechanics` since Phase 2);
   - `config.modules` (default `[]`, empty raises) selects
     `viva_pulse.circuits.MODULES`;
   - outputs nest per module as `float` deltas, plus `irreversible_state`;
@@ -133,10 +172,26 @@ implement and complete" [docs/plan/plan-circuit-composites.md](docs/plan/plan-ci
 
 ### Next
 
-1. Finish Phase 2 (review, PR, merge, v0.3.0), then Phase 3 thermal, Phase 4
-   ECMO and equipment, and Phase 5 the whole-body composite. Follow-ups are in
-   the plan.
-2. Earlier backlog, still open:
+1. **Phase 3 thermal**: in progress (see above). The original plan's steps,
+   kept for reference:
+   - First, a scratchpad probe (P8):
+     - which `SEEnergySystem` scalars return non-NaN after advancing;
+     - which thermal compartments, including their spelling (`Inflow`/`Outflow`
+       caution);
+     - whether `SEChangeEnvironmentalConditions` and `SEThermalApplication` move
+       core and skin temperature.
+   - The plan's notes: internal plus external thermal form one solve; core
+     temperature about 37.0 °C; Pulse hypothermia below 35 °C and hyperthermia
+     above 38.8 °C. Runs are hour-scale, so keep the tests short and anchor them on
+     measured effect sizes.
+   - Then the module, the generator, real-engine tests with mutation checks,
+     README/CLAUDE.md/plan notes, an adversarial review, and the release flow.
+   - Diagrams: `../engine/docs/Images/Energy/internalThermal.png`,
+     `Environment/EnvironmentCircuit.png`.
+2. Then Phase 4 ECMO and equipment (design an edge-triggered binding for one-shot
+   commands first), and Phase 5 the whole-body composite. Follow-ups are in the
+   plan.
+3. Earlier backlog, still open:
    - `CONTRIBUTING.md` and `.github/workflows/release.yml`.
    - Phase 5 investigation (`vwb scaffold-investigation --name pulse --studies
      viva_pulse.composites.hemorrhage.pulse_hemorrhage,viva_pulse.composites.hemorrhage.pulse_resuscitation`;
@@ -162,6 +217,20 @@ implement and complete" [docs/plan/plan-circuit-composites.md](docs/plan/plan-ci
   (target 90): MAP 86.3, BV 4014. Aorta 1.0 is irreversible at t=68 s.
 
 ### Open items to report upstream
+
+Drafted (2026-10-23), each re-verified against source or by a fresh repro, in
+`upstream-issues/` (git-excluded; the user files them):
+- `pulse.md`: 7 issues. `keep_event_changes` is already fixed upstream
+  (`175f0dfe7`, not on stable), so it isn't drafted.
+- `bigraph-schema.md`: 4 issues (A, B, D, E). The owner was verified; B is
+  the leak of undeclared keys, since seeding a declared input is intended.
+- `process-bigraph.md`: 1 issue (C), a follow-up to #222/#227 (precision
+  auto-default only on `CompositeSpec`).
+- `viva-superpowers.md`: 2 issues. The tracker is viva-superpowers, not
+  vivarium-workbench; both are still present in 0.24.0.
+- Correction to the notes below: the `bigraph-viz` Python-floor problem is
+  viva-superpowers' in-place scaffold dropping the template's own
+  `requires-python >=3.11`; it isn't in viva-template.
 
 - process-bigraph 1.10 / bigraph-schema 1.8.2 drop `initial_state()` values
   for `overwrite[float]` and `boolean` output ports (repro in

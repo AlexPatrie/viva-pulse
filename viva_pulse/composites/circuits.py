@@ -13,6 +13,7 @@ from ..circuits.cardiovascular import CARDIOVASCULAR, HEMORRHAGE_COMPARTMENTS, M
 from ..circuits.respiratory import (
     INTUBATION_TYPES, MECHANICAL_VENTILATOR, MULTIPLIERS as RESPIRATORY_MULTIPLIERS, RESPIRATORY,
     VENTILATOR_BASELINE, VENTILATOR_MODES)
+from ..circuits.thermal import ENVIRONMENT_BASELINE, THERMAL, THERMAL_APPLICATION_BASELINE
 from ..core import register_processes
 
 
@@ -193,6 +194,57 @@ def pulse_mechanical_ventilation(core=None, *, model_type="ventilation_mechanics
                               state_file=state_file, patient_file=patient_file, interval=interval,
                               **config),
         "interventions": {"respiratory": respiratory, "mechanical_ventilator": ventilator},
+        "circuits": {},
+        "emitter": circuit_emitter(),
+    }
+
+
+_THERMAL_DESCRIPTIONS = {
+    "ambient_temperature_C": "Air temperature around the body (not the air breathed; see "
+                             "respiration_ambient_temperature_C)",
+    "mean_radiant_temperature_C": "Mean radiant temperature of the surroundings",
+    "respiration_ambient_temperature_C": "Temperature of the air breathed; drives respiration heat loss",
+    "relative_humidity": "Relative humidity in [0, 1]",
+    "air_velocity_m_per_s": "Air speed over the body",
+    "clothing_resistance_clo": "Clothing thermal resistance (1 clo = 0.155 m^2 K/W)",
+    "active_heating_W": "Active heating power; Pulse delivers power x area fraction",
+    "active_heating_area_fraction": "Fraction of skin area under active heating, in (0, 1]",
+    "active_cooling_W": "Active cooling power; Pulse removes power x area fraction",
+    "active_cooling_area_fraction": "Fraction of skin area under active cooling, in (0, 1]",
+    "applied_temperature_on": "1 = apply applied_temperature_C over the clothing, 0 = off",
+    "applied_temperature_C": "Applied temperature, used when applied_temperature_on = 1",
+    "applied_temperature_area_fraction": "Fraction in (0, 1] by which Pulse blends the applied "
+                                         "temperature with the ambient temperature",
+}
+
+
+@composite_generator(
+    name="pulse_thermal",
+    description="The Pulse temperature circuit (internal core/skin joined to clothing, enclosure "
+                "and ambient air) in the real whole-body engine: core and skin temperature, sweat, "
+                "metabolic rate, heat-loss rates and per-compartment temperatures and heat flows, "
+                "driven by the environmental conditions and by active heating, cooling or an "
+                "applied skin temperature.",
+    parameters={
+        "model_type": {"type": "string", "default": "whole_body", "choices": ["whole_body"],
+                       "description": "Pulse engine running the circuit"},
+        "state_file": _STATE_FILE,
+        "interval": _INTERVAL,
+        **{port: {"type": "float", "default": value, "description": _THERMAL_DESCRIPTIONS[port]}
+           for port, value in {**ENVIRONMENT_BASELINE, **THERMAL_APPLICATION_BASELINE}.items()},
+    },
+    core_extensions=[register_processes],
+    default_n_steps=1800,
+    fidelity="real-bridge",
+)
+def pulse_thermal(core=None, *, model_type="whole_body", state_file="StandardMale@0s.json",
+                  interval=1.0, **overrides):
+    setpoints = _setpoints(THERMAL, overrides, {})
+    _reject_unknown(overrides)
+    return {
+        "pulse": circuit_node(["thermal"], model_type=model_type, state_file=state_file,
+                              interval=interval),
+        "interventions": {"thermal": setpoints},
         "circuits": {},
         "emitter": circuit_emitter(),
     }

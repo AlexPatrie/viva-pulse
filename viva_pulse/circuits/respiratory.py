@@ -56,7 +56,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .base import ActionBinding, CircuitModule, Request
+from .base import ActionBinding, CircuitModule, Request, validate_switch
 
 BOTH_ENGINES = frozenset({"whole_body", "ventilation_mechanics"})
 
@@ -192,13 +192,8 @@ def _build_multipliers(values: dict[str, float], config: dict[str, Any]):
     return action
 
 
-def _validate_switch(port: str, value: float) -> None:
-    if value not in (0.0, 1.0):
-        raise ValueError(f"{port} must be 0 or 1, got {value}")
-
-
 def _validate_intubation(values: dict[str, float], config: dict[str, Any]) -> None:
-    _validate_switch("intubated", values["intubated"])
+    validate_switch("intubated", values["intubated"])
 
 
 def _build_intubation(values: dict[str, float], config: dict[str, Any]):
@@ -224,7 +219,7 @@ def _check_respiratory_config(config: dict[str, Any]) -> None:
 
 
 def _validate_ventilator(values: dict[str, float], config: dict[str, Any]) -> None:
-    _validate_switch("connected", values["connected"])
+    validate_switch("connected", values["connected"])
     rate = values["respiration_rate_bpm"]
     period = values["inspiratory_period_s"]
     slope = values["slope_s"]

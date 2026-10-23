@@ -6,10 +6,10 @@ A [process-bigraph](https://github.com/vivarium-collective/process-bigraph) wrap
 
 - **Available:**
   - processes: `PulseProcess`, `PulseCircuitProcess`, `MapFluidController`;
-  - composites: `pulse_hemorrhage`, `pulse_resuscitation`, and the per-circuit composites `pulse_cardiovascular`, `pulse_respiratory`, `pulse_mechanical_ventilation`.
+  - composites: `pulse_hemorrhage`, `pulse_resuscitation`, and the per-circuit composites `pulse_cardiovascular`, `pulse_respiratory`, `pulse_mechanical_ventilation`, `pulse_thermal`.
 
   All are tested against the real engine.
-- **Planned:** per-circuit composites for thermal, and ECMO and other equipment. See [docs/plan/plan-circuit-composites.md](docs/plan/plan-circuit-composites.md).
+- **Planned:** per-circuit composites for ECMO and other equipment, then one whole-body composite with every module. See [docs/plan/plan-circuit-composites.md](docs/plan/plan-circuit-composites.md).
 
 ## Requirements
 
@@ -72,6 +72,7 @@ rows = gather_emitter_results(sim)[("emitter",)]
 | `pulse_cardiovascular` | The cardiovascular circuit, including its renal and tissue branches. Emits pressure, volume, inflow and outflow for 32 vascular regions, plus 20 hemodynamic values. Driven by Pulse's resistance and compliance multipliers and a hemorrhage. |
 | `pulse_respiratory` | The respiratory (airway) circuit, either alone in Pulse's ventilation-mechanics engine (default) or coupled in the whole-body engine. Emits 24 breathing-mechanics values plus pressure, volume, inflow and outflow for 8 lung and pleural regions. Driven by Pulse's 10 respiratory resistance and compliance multipliers and intubation. |
 | `pulse_mechanical_ventilation` | The same, with a pressure-control mechanical ventilator connected, plus the ventilator's 18 monitor values. Defaults follow Kitware's HowTo: intubated, AC mode, 19/5 cmH2O, 12 breaths/min. Settings, including `connected`, can change mid-run. |
+| `pulse_thermal` | The temperature circuit: core and skin joined to clothing, enclosure and ambient air. Emits core and skin temperature, sweat rate, metabolic rate, 8 heat-loss values, the environmental conditions as Pulse applies them, and temperature (7 regions) and heat flow (8 regions) for the thermal regions. Driven by the environment (air, radiant and breathed-air temperature, humidity, air speed, clothing) and by active heating, active cooling or an applied skin temperature. |
 
 All use `fidelity="real-bridge"`.
 
@@ -91,7 +92,7 @@ All use `fidelity="real-bridge"`.
   - Each module's readings are a nested subtree of `float` delta ports. For example, `cardiovascular/central/aorta/pressure_mmHg` is wired to `circuits/cardiovascular/...`.
   - Its setpoints sit under the `setpoints` input port and are wired to `interventions/<module>/...`. Each defaults to its baseline (multipliers 1.0, hemorrhage 0.0) and is sent to Pulse only when it changes.
   - Identical requests from several modules share one Pulse request. A request Pulse cannot serve fails the load, or the update where it appears, instead of emitting NaN.
-  - `model_type` selects the engine: `whole_body`, or `ventilation_mechanics`, which has the airway only (no blood or chemoreflex). Each module declares which engines it supports.
+  - `model_type` selects the engine: `whole_body`, or `ventilation_mechanics`, which has the airway only (no blood or chemoreflex). Each module declares which engines it supports; `thermal` runs on `whole_body` only.
 - **`MapFluidController`**: a proportional `Step` that maps mean arterial pressure to IV infusion rate.
 
 ## Pulse circuits
@@ -142,13 +143,45 @@ for engine in ("ventilation_mechanics", "whole_body"):
 
 Lung and pleural region pressures (`absolute_pressure_cmH2O`) are absolute, with Pulse's ambient at 1033.2 cmH2O. The `mechanics` pressures are relative to atmosphere. Intubation is one-way, because Pulse's Python API drops extubation actions; setting `intubated` from 1 back to 0 raises an error rather than leaving the store and the engine out of sync.
 
+### Thermal circuit
+
+`pulse_thermal` runs on the whole-body engine, where skin blood flow, shivering and sweating couple the temperature circuit to the rest of the body:
+
+```python
+from process_bigraph import Composite, gather_emitter_results
+
+from viva_pulse.composites import pulse_thermal
+from viva_pulse.core import build_core
+
+cold = dict(ambient_temperature_C=-10.0, mean_radiant_temperature_C=-10.0,
+            respiration_ambient_temperature_C=-10.0, air_velocity_m_per_s=5.0)
+for label, params in (("standard", {}), ("cold", cold)):
+    core = build_core()
+    sim = Composite({"state": pulse_thermal(core, interval=60.0, **params)}, core=core)
+    sim.run(600)
+    energy = gather_emitter_results(sim)[("emitter",)][-1]["circuits"]["thermal"]["energy"]
+    print(label, round(energy["skin_temperature_C"], 1), round(energy["core_temperature_C"], 2))
+# standard 31.1 37.07   <- the stabilized state still drifts: skin starts at 32.4
+# cold 19.1 36.88
+```
+
+- **Time scale.** Skin responds within minutes; core temperature takes tens of minutes. Thirty simulated minutes take about a minute to run.
+- **Compare against an unperturbed run.** Pulse's stabilized states aren't thermally settled: skin temperature drifts from 32.4 to 30.0 °C over 30 minutes with nothing changed.
+- **Environment setpoints.** They change only the conditions they name; the atmosphere and ambient gases stay as they are. Pulse keeps the temperature of the air breathed separate from the ambient temperature, so set `respiration_ambient_temperature_C` as well for a change of air. Defaults are Pulse's `Standard.json` environment, which every shipped state uses; a state with a different environment fails the load, because the first change would reset it.
+- **Heating and cooling.** Pulse delivers `power × area_fraction` as heat, so at the default fraction of 1.0 the power is the heat delivered. Returning every power to 0 with the applied temperature off removes the application. The applied temperature acts over the clothing, blended with the ambient temperature by its area fraction.
+- **Regions.** `active` is the applied-temperature node; it carries heat only while an applied temperature is on. The reference nodes aren't exposed: `ExternalGround` reads absolute zero and `InternalGround` has no temperature.
+
+![Pulse environment (external thermal) circuit](docs/images/circuit-environment.png)
+
+*Pulse environment circuit, the external half of the temperature circuit. Copyright Kitware, Inc. and Contributors, Apache License 2.0, from `engine/docs/Images/Environment/EnvironmentCircuit.png`.*
+
 ## Tests
 
 ```bash
 uv run --no-sync pytest -q
 ```
 
-The full suite takes about 100 s. Every engine-dependent test drives the real Pulse build; nothing is mocked. Where a test needs an expected value, it loads its own engine directly through Pulse's Python API.
+The full suite takes about 160 s, most of it simulated time in the thermal and resuscitation tests. Every engine-dependent test drives the real Pulse build; nothing is mocked. Where a test needs an expected value, it loads its own engine directly through Pulse's Python API.
 
 ## Regarding using the Python binding
 

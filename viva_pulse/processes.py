@@ -276,7 +276,9 @@ class PulseCircuitProcess(Process):
     the engine is not advanced after that. Identical requests from different
     modules share one Pulse request. A request that Pulse cannot serve (it
     returns NaN) raises at load or at the update where it appears, naming the
-    request. All changed setpoint groups are validated before any action is sent.
+    request. A module's ``check_loaded`` sees its readings at load and can reject
+    a state that contradicts its setpoint baselines. All changed setpoint groups
+    are validated before any action is sent.
 
     WholeBody loads a stabilized ``state_file``. VentilationMechanics has no
     state files, so it initializes from ``patient_file`` and then settles (see
@@ -367,6 +369,10 @@ class PulseCircuitProcess(Process):
             engine = _load_engine(self.config["install_dir"], SUPPORTED_MODEL_TYPES[model_type],
                                   self.config["state_file"], requests)
         values = self._pull(engine)
+        loaded = _nest([(path, values[i]) for path, i in self._slots])
+        for module in self._modules:
+            if module.check_loaded:
+                module.check_loaded(loaded[module.name])
         self._engine = engine
         self._previous = values
         return engine

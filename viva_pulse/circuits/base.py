@@ -24,11 +24,13 @@ RESERVED_NAMES = frozenset({"setpoints", "irreversible_state"})
 class Request:
     """One Pulse data request, emitted at ``path`` inside its module's port tree.
 
-    ``category`` is ``"physiology"``, ``"liquid_compartment"``,
-    ``"gas_compartment"`` or ``"mechanical_ventilator"``. ``unit`` is
-    ``(unit class in pulse.cdm.scalars, unit attribute)``, or None for unitless.
-    Compartment property names are Pulse's own spelling: ``Pressure``,
-    ``Volume``, ``Inflow``, ``Outflow`` (``SEDataRequestTracker.cpp``).
+    ``category`` is ``"physiology"``, ``"environment"``, ``"liquid_compartment"``,
+    ``"gas_compartment"``, ``"thermal_compartment"`` or ``"mechanical_ventilator"``.
+    ``unit`` is ``(unit class in pulse.cdm.scalars, unit attribute)``, or None for
+    unitless. Compartment property names are Pulse's own spelling: ``Pressure``,
+    ``Volume``, ``Inflow``, ``Outflow`` (``SEDataRequestTracker.cpp``), and
+    ``Temperature``, ``Heat``, ``HeatTransferRateIn``, ``HeatTransferRateOut``
+    for thermal compartments (``SEThermalCompartment.cpp``).
     """
 
     path: tuple[str, ...]
@@ -48,11 +50,16 @@ class Request:
         unit = getattr(getattr(scalars, self.unit[0]), self.unit[1]) if self.unit else None
         if self.category == "physiology":
             return SEDataRequest.create_physiology_request(self.property, unit=unit)
+        if self.category == "environment":
+            return SEDataRequest.create_environment_request(self.property, unit=unit)
         if self.category == "liquid_compartment":
             return SEDataRequest.create_liquid_compartment_request(
                 self.compartment, self.property, unit=unit)
         if self.category == "gas_compartment":
             return SEDataRequest.create_gas_compartment_request(
+                self.compartment, self.property, unit=unit)
+        if self.category == "thermal_compartment":
+            return SEDataRequest.create_thermal_compartment_request(
                 self.compartment, self.property, unit=unit)
         if self.category == "mechanical_ventilator":
             return SEDataRequest.create_mechanical_ventilator_request(self.property, unit=unit)
@@ -77,6 +84,12 @@ class ActionBinding:
     check_transition: Callable[[dict[str, float], dict[str, float]], None] | None = None
 
 
+def validate_switch(port: str, value: float) -> None:
+    """A 0/1 setpoint."""
+    if value not in (0.0, 1.0):
+        raise ValueError(f"{port} must be 0 or 1, got {value}")
+
+
 @dataclass(frozen=True)
 class CircuitModule:
     """One circuit family: its outputs, its setpoint bindings, its config params.
@@ -84,7 +97,10 @@ class CircuitModule:
     ``model_types`` lists the Pulse engines (``ENGINE_MODEL_TYPES``) on which
     every request and action of this module is supported. ``params`` are
     ``config_schema`` entries that ``PulseCircuitProcess`` exposes, and
-    ``check_config`` validates them, raising ``ValueError``.
+    ``check_config`` validates them, raising ``ValueError``. ``check_loaded``
+    receives the module's readings (nested like its outputs) once the engine is
+    loaded, and raises ``ValueError`` if the loaded state contradicts the
+    module's setpoint baselines.
     """
 
     name: str
@@ -93,6 +109,7 @@ class CircuitModule:
     bindings: tuple[ActionBinding, ...] = ()
     params: dict[str, dict[str, Any]] = field(default_factory=dict)
     check_config: Callable[[dict[str, Any]], None] | None = None
+    check_loaded: Callable[[dict[str, Any]], None] | None = None
 
     def __post_init__(self):
         if self.name in RESERVED_NAMES:
