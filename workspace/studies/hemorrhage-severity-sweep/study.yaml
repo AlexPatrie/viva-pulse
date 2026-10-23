@@ -20,7 +20,8 @@ hypothesis: 'Blood lost and heart rate rise monotonically with severity, while m
   bleed is severe enough to outrun that compensation.
 
   '
-objective: 'Run pulse_hemorrhage for 600 s at severity 0.0, 0.2, 0.4, 0.6, 0.8 and 1.0
+objective: 'Run pulse_hemorrhage for 600 s at severity 0.0, 0.2, 0.4, 0.6, 0.8 and
+  1.0
 
   (RightLeg, StandardMale) and compare the final vitals across the grid.
 
@@ -32,6 +33,7 @@ baseline:
     state_file: StandardMale@0s.json
     compartment: RightLeg
     severity: 0.8
+    n_steps: 600
 variants:
 - name: severity-0.0
   base_composite: severity-0.8
@@ -78,6 +80,11 @@ readouts:
   store_path: vitals.irreversible_state
   description: Pulse reported an irreversible state; the engine is no longer advanced.
   status: available
+- name: hemorrhage-severity
+  store_path: interventions.hemorrhage_severity
+  description: Severity setpoint applied to the engine (recorded so figures read it
+    from the run).
+  status: available
 expected_behavior:
 - name: blood-loss-rises-with-severity
   observable: vitals.total_hemorrhaged_volume_mL
@@ -85,18 +92,30 @@ expected_behavior:
   test: tests/test_severity.py::test_blood_loss_rises_with_severity
 - name: pressure-held-until-severe
   observable: vitals.mean_arterial_pressure_mmHg
-  condition: within 2 mmHg of start at severity 0.2 and 0.4; at least 8 mmHg below start at 0.8
+  condition: within 2 mmHg of start at severity 0.2 and 0.4; at least 8 mmHg below
+    start at 0.8
   test: tests/test_severity.py::test_pressure_held_for_mild_bleeds, test_pressure_falls_for_severe_bleeds
+visualizations:
+- name: severity-response
+  address: local:HemorrhageSeverityResponse
+  config:
+    inputs_map:
+      time: time
+      severity: interventions.hemorrhage_severity
+      mean_arterial_pressure: vitals.mean_arterial_pressure_mmHg
+      heart_rate: vitals.heart_rate_bpm
+      hemorrhaged_volume: vitals.total_hemorrhaged_volume_mL
 robustness:
   n_replicates: 1
   parameter_sweep: true
-  note: Pulse is deterministic; the severity-0.8 pilot reproduced the earlier reference run to 4 significant
-    figures.
+  note: Pulse is deterministic; the severity-0.8 pilot reproduced the earlier reference
+    run to 4 significant figures.
 controls:
 - name: severity-0.0
   kind: negative
   hypothesis: With no bleed nothing is lost and the vitals stay at their loaded values.
-  expected: Less than 1 mL hemorrhaged; MAP and heart rate within 1 unit of their starting values.
+  expected: Less than 1 mL hemorrhaged; MAP and heart rate within 1 unit of their
+    starting values.
   observed: ''
   result: PENDING
 preregistered:
@@ -109,11 +128,13 @@ preregistered:
   - tests/test_severity.py::test_pressure_falls_for_severe_bleeds
   - tests/test_severity.py::test_reproduces_reference_run
   predictions:
-  - 'Pilot probe (direct pulse_hemorrhage runs, 600 s): severity 0.2 / 0.5 / 0.8 lost 386 / 1040 / 1577
-    mL; heart rate 76 / 95 / 107 bpm; MAP 95.0 / 94.8 / 84.1 mmHg from 95.3.'
-  thresholds_provenance: Thresholds come from that pilot probe and from the reference run in .build-progress.md
-    (RightLeg 0.8, 600 s, BV 3936 mL, MAP 84.1 mmHg).
-falsifiability: 'The hypothesis is refuted if blood loss or heart rate fails to increase with
+  - 'Pilot probe (direct pulse_hemorrhage runs, 600 s): severity 0.2 / 0.5 / 0.8 lost
+    386 / 1040 / 1577 mL; heart rate 76 / 95 / 107 bpm; MAP 95.0 / 94.8 / 84.1 mmHg
+    from 95.3.'
+  thresholds_provenance: Thresholds come from that pilot probe and from the reference
+    run in .build-progress.md (RightLeg 0.8, 600 s, BV 3936 mL, MAP 84.1 mmHg).
+falsifiability: 'The hypothesis is refuted if blood loss or heart rate fails to increase
+  with
 
   severity, if MAP drops more than 2 mmHg at severity 0.2 or 0.4, or if MAP at
 
@@ -121,6 +142,6 @@ falsifiability: 'The hypothesis is refuted if blood loss or heart rate fails to 
 
   '
 limitations:
-- One patient (StandardMale), one site (RightLeg) and 10 minutes; longer bleeds and other sites are not
-  covered.
+- One patient (StandardMale), one site (RightLeg) and 10 minutes; longer bleeds and
+  other sites are not covered.
 - Severity is Pulse's own dimensionless scale, not a calibrated flow rate.

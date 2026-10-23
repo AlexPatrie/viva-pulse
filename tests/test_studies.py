@@ -9,16 +9,23 @@ output wires (``vitals/`` here), so the readout paths are checked against the
 realized composite instead.
 """
 
+import sqlite3
 from pathlib import Path
 
 import pytest
 import yaml
-from process_bigraph import Composite
+from process_bigraph import Composite, allocate_core
 from process_bigraph.composite_generator import _REGISTRY, build_generator
+from vivarium_workbench.lib.investigations import build_viz_composite, gather_emitter_outputs
 from vivarium_workbench.lib.study_runs import run_study_baseline, run_study_variant
+from vivarium_workbench.testing import Run
 
 from viva_pulse.core import build_core
 from viva_pulse.runtime import resolve_install_dir
+from viva_pulse.visualizations.cohort_blood_loss import CohortBloodLoss
+from viva_pulse.visualizations.hemorrhage_severity_response import HemorrhageSeverityResponse
+
+VISUALIZATIONS = {cls.__name__: cls for cls in (CohortBloodLoss, HemorrhageSeverityResponse)}
 
 ROOT = Path(__file__).resolve().parents[1]
 STUDIES = ROOT / "workspace" / "studies"
@@ -79,3 +86,39 @@ def test_study_entry_runs_and_emits_its_readouts(study, kind, name):
         value = _leaf(sim.state, readout["store_path"])
         assert isinstance(value, (int, float)), (readout["store_path"], value)
     assert sim.state["vitals"]["irreversible_state"] is False
+
+
+def _specs():
+    return {p.parent.name: yaml.safe_load(p.read_text()) for p in sorted(STUDIES.glob("*/study.yaml"))}
+
+
+def _declared(key):
+    for study, spec in _specs().items():
+        for viz in spec.get(key, []):
+            yield pytest.param(study, viz, id=f"{study}/{viz['name']}")
+
+
+@pytest.mark.parametrize("study, viz", list(_declared("visualizations")))
+def test_visualization_renders_from_the_recorded_runs(study, viz):
+    """The workbench's own render path (gather runs.db -> build_viz_composite -> one step)."""
+    cls = VISUALIZATIONS[viz["address"].removeprefix("local:")]
+    core = allocate_core()
+    core.register_link(cls.__name__, cls)
+    gathered = gather_emitter_outputs(STUDIES / study / "runs.db")
+    document = build_viz_composite(viz, gathered, {cls.__name__: cls})
+    sim = Composite({"state": document}, core=core)
+    sim.run(1)
+    html = sim.state["output_store"]
+    assert "Plotly.newPlot" in html, html[:300]
+
+
+@pytest.mark.parametrize("study, viz", list(_declared("comparative_visualizations")))
+def test_comparative_visualization_resolves_every_run(study, viz):
+    """Each run is found by its sim_name (the label) and records the observable."""
+    db = STUDIES / study / "runs.db"
+    for entry in viz["runs"]:
+        with sqlite3.connect(db) as conn:
+            row = conn.execute("SELECT run_id FROM runs_meta WHERE sim_name = ? "
+                               "ORDER BY started_at DESC LIMIT 1", (entry["sim_name"],)).fetchone()
+        assert row, f"no run named {entry['sim_name']!r}"
+        assert len(Run(db, row[0]).observable(viz["observable_path"])) > 0

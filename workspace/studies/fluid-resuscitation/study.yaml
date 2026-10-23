@@ -13,7 +13,8 @@ question: 'After a severe right-leg hemorrhage, does a closed-loop MAP-targeted 
   does the infused compound (saline vs whole blood) matter?
 
   '
-hypothesis: 'Both treated arms end the 10 minutes with more blood volume and a higher mean
+hypothesis: 'Both treated arms end the 10 minutes with more blood volume and a higher
+  mean
 
   arterial pressure than the untreated arm, because the controller infuses
 
@@ -36,9 +37,11 @@ baseline:
     state_file: StandardMale@0s.json
     compartment: RightLeg
     severity: 0.8
+    n_steps: 600
+variants:
 - name: saline-map-90
   composite: viva_pulse.composites.hemorrhage.pulse_resuscitation
-  params:
+  parameter_overrides:
     state_file: StandardMale@0s.json
     compartment: RightLeg
     severity: 0.8
@@ -46,11 +49,18 @@ baseline:
     target_map_mmHg: 90.0
     gain: 25.0
     max_rate_mL_per_min: 250.0
-variants:
+    n_steps: 600
 - name: blood-map-90
-  base_composite: saline-map-90
+  composite: viva_pulse.composites.hemorrhage.pulse_resuscitation
   parameter_overrides:
+    state_file: StandardMale@0s.json
+    compartment: RightLeg
+    severity: 0.8
     compound: Blood
+    target_map_mmHg: 90.0
+    gain: 25.0
+    max_rate_mL_per_min: 250.0
+    n_steps: 600
 readouts:
 - name: mean-arterial-pressure
   store_path: vitals.mean_arterial_pressure_mmHg
@@ -84,20 +94,44 @@ readouts:
 expected_behavior:
 - name: treatment-preserves-volume-and-pressure
   observable: vitals.blood_volume_mL, vitals.mean_arterial_pressure_mmHg
-  condition: both treated arms end with more blood volume and a higher MAP than the untreated arm
+  condition: both treated arms end with more blood volume and a higher MAP than the
+    untreated arm
   test: tests/test_resuscitation.py::test_treated_arms_preserve_blood_volume, test_treated_arms_preserve_pressure
+comparative_visualizations:
+- name: map-by-arm
+  title: MAP-targeted infusion slows the fall in arterial pressure
+  observable_path: vitals.mean_arterial_pressure_mmHg
+  y_label: MAP (mmHg)
+  runs: &id001
+  - sim_name: untreated
+    label: Untreated
+  - sim_name: saline-map-90
+    label: Saline, MAP target 90
+  - sim_name: blood-map-90
+    label: Whole blood, MAP target 90
+- name: blood-volume-by-arm
+  title: Blood volume by treatment arm
+  observable_path: vitals.blood_volume_mL
+  y_label: Blood volume (mL)
+  runs: *id001
+- name: infusion-by-arm
+  title: Infusion rate commanded by the MAP controller
+  observable_path: interventions.iv_rate_mL_per_min
+  y_label: Infusion (mL/min)
+  runs: *id001
 controls:
 - name: untreated
   kind: negative
-  hypothesis: Without treatment the bleed runs its course; this is the reference the treated arms must
-    beat.
+  hypothesis: Without treatment the bleed runs its course; this is the reference the
+    treated arms must beat.
   expected: Final blood volume 3936 mL and MAP 84.1 mmHg, the reference run in .build-progress.md.
   observed: ''
   result: PENDING
 robustness:
   n_replicates: 1
   parameter_sweep: false
-  note: Pulse is deterministic; the untreated arm reproduces the earlier reference run.
+  note: Pulse is deterministic; the untreated arm reproduces the earlier reference
+    run.
 preregistered:
   registered_at: '2026-10-23'
   criteria:
@@ -106,15 +140,18 @@ preregistered:
   - tests/test_resuscitation.py::test_treated_arms_preserve_blood_volume
   - tests/test_resuscitation.py::test_treated_arms_preserve_pressure
   predictions:
-  - 'Reference results (.build-progress.md, StandardMale RightLeg 0.8, 600 s): untreated MAP 84.1 mmHg,
-    BV 3936 mL; saline controller (target 90) MAP 86.3 mmHg, BV 4014 mL.'
-  - Whole blood has not been run before; only the direction (better than untreated) is predicted, not
-    its size relative to saline.
-falsifiability: 'Refuted if either treated arm ends with no more blood volume, or no higher
+  - 'Reference results (.build-progress.md, StandardMale RightLeg 0.8, 600 s): untreated
+    MAP 84.1 mmHg, BV 3936 mL; saline controller (target 90) MAP 86.3 mmHg, BV 4014
+    mL.'
+  - Whole blood has not been run before; only the direction (better than untreated)
+    is predicted, not its size relative to saline.
+falsifiability: 'Refuted if either treated arm ends with no more blood volume, or
+  no higher
 
   MAP, than the untreated arm, or if the controller never infuses.
 
   '
 limitations:
-- One bleed, one patient and one controller tuning; the controller target and gain are not swept here.
+- One bleed, one patient and one controller tuning; the controller target and gain
+  are not swept here.
 - 10 minutes only; the longer-term effect of dilution with saline is not covered.
