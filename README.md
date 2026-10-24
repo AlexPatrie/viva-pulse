@@ -1,6 +1,7 @@
 # viva-pulse
 
 [![Documentation](https://readthedocs.org/projects/viva-pulse/badge/?version=latest)](https://viva-pulse.readthedocs.io/en/latest/)
+[![pulse-engine-ci](https://github.com/vivarium-collective/viva-pulse/actions/workflows/pulse-engine-ci.yml/badge.svg)](https://github.com/vivarium-collective/viva-pulse/actions/workflows/pulse-engine-ci.yml)
 
 A [process-bigraph](https://github.com/vivarium-collective/process-bigraph) wrapper that drives the **real** [Kitware Pulse Physiology Engine](https://gitlab.kitware.com/physiology/engine) (whole-body adult model). Pulse runs as a time-stepped `Process`. Interventions are input ports, vital signs are output ports, and simulations are ordinary `process_bigraph.Composite` documents. Nothing is reimplemented or mocked: every number comes from Pulse's C++ engine through its own Python bindings.
 
@@ -250,6 +251,8 @@ uv run --no-sync pytest -q
 ```
 
 The full suite takes about 225 s, most of it simulated time in the thermal, whole-body and resuscitation tests. Every engine-dependent test drives the real Pulse build; nothing is mocked. Where a test needs an expected value, it loads its own engine directly through Pulse's Python API.
+
+CI (`.github/workflows/pulse-engine-ci.yml`) runs the same suite on every pull request against a real Pulse build. It builds Pulse from source once per toolchain (`.github/scripts/build-pulse.sh`), checks the install with `.github/scripts/verify-pulse-install.py`, and caches it; a skipped engine test fails the run.
 
 ---
 ## Regarding...

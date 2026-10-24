@@ -44,3 +44,30 @@ def test_wheel_declares_the_license_it_ships(tmp_path):
     assert "License-Expression: Apache-2.0" in metadata.splitlines()
     assert "Apache License" in shipped and "Version 2.0, January 2004" in shipped
     assert shipped == (ROOT / "LICENSE").read_text()
+
+
+def test_protobuf_pin_matches_the_pulse_build():
+    """Falsifies: pyproject admits a protobuf minor other than the one the Pulse build generated
+    its ``_pb2`` code for, or the installed protobuf differs from it. Regression: the dependency
+    was a bare ``protobuf``, so any fresh install (CI, Read the Docs) resolved the newer 7.36.x."""
+    import re
+    import tomllib
+
+    import google.protobuf
+    from packaging.requirements import Requirement
+    from packaging.version import Version
+
+    from viva_pulse.runtime import resolve_install_dir
+
+    generated = sorted(
+        {m.group(1) for path in (resolve_install_dir() / "python" / "pulse").rglob("*_pb2.py")
+         if (m := re.search(r"^# Protobuf Python Version: (\S+)$", path.read_text(), re.M))})
+    assert len(generated) == 1, f"generated code names several protobuf versions: {generated}"
+    built = Version(generated[0])
+
+    deps = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["dependencies"]
+    (pin,) = [Requirement(d).specifier for d in deps if Requirement(d).name == "protobuf"]
+    assert built in pin
+    assert Version(f"{built.major}.{built.minor + 1}.0") not in pin
+    assert Version(f"{built.major}.{built.minor - 1}.0") not in pin
+    assert google.protobuf.__version__ == str(built)
