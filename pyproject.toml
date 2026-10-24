@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "viva-pulse"
-version = "0.7.0"
+version = "0.7.1"
 description = "Process-bigraph wrapper for the Kitware Pulse Physiology Engine"
 readme = "README.md"
 license = "Apache-2.0"
@@ -23,7 +23,7 @@ dependencies = [
     "process-bigraph>=1.10",
     "numpy",
     "pandas",
-    "protobuf",
+    "protobuf>=7.35,<7.36",
     "bigraph-viz>=2.0.3",
     "pyyaml>=6.0",
     "jsonschema[format-nongpl]>=4.21",
